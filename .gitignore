@@ -1,0 +1,4 @@
+# 选股分析 Web
+__pycache__/
+data_cache/
+*.pyc
