@@ -109,6 +109,27 @@ def cached_analyze(code: str, _market: str, _fund_key: str, _insight_key: str):
 # 全市场发现页
 # ═══════════════════════════════════════════
 
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_market_index():
+    """三大指数实时行情"""
+    import requests
+    url = "https://push2.eastmoney.com/api/qt/ulist.np/get"
+    params = {"fltt": 2, "secids": "1.000001,0.399001,0.399006,1.000688",
+              "fields": "f2,f3,f6,f14"}
+    try:
+        resp = requests.get(url, params=params, timeout=5)
+        items = resp.json().get("data", {}).get("diff", [])
+        return [{"name": i["f14"], "price": i["f2"]/100, "pct": i["f3"]/100, "vol": i["f6"]} for i in items]
+    except Exception:
+        return []
+
+
+def _fmt_amount(v):
+    if abs(v) > 1e12: return f"{v/1e12:.1f}万亿"
+    if abs(v) > 1e8: return f"{v/1e8:.0f}亿"
+    return f"{v/1e4:.0f}万"
+
+
 @st.cache_data(ttl=3600, show_spinner="正在扫描全市场...")
 def _cached_scanner():
     from auto_scanner import run_scan
@@ -116,10 +137,24 @@ def _cached_scanner():
 
 
 def render_discovery_page():
-    st.caption("全市场 Q1 暴增筛选 → 研报聚合 → 异常检测")
+    # ── 市场总览 ──
+    indices = _cached_market_index()
+    if indices:
+        cols = st.columns(len(indices))
+        for i, idx in enumerate(indices):
+            color = "#e53935" if idx["pct"] >= 0 else "#26a69a"
+            with cols[i]:
+                st.markdown(f"""
+                <div style='text-align:center;padding:8px;border-radius:8px;background:#fafafa'>
+                    <div style='font-size:11px;color:#666'>{idx['name']}</div>
+                    <div style='font-size:18px;font-weight:bold;color:{color}'>{idx['price']:.0f}</div>
+                    <div style='font-size:13px;color:{color}'>{idx['pct']:+.2f}%</div>
+                </div>
+                """, unsafe_allow_html=True)
+
     st.divider()
 
-    # 自动加载（首次 2-3 分钟，缓存 1 小时后秒出）
+    # ── 扫描 ──
     data = _cached_scanner()
 
     if "error" in data:
@@ -132,6 +167,21 @@ def render_discovery_page():
     if not pool:
         st.info("无符合条件标的")
         return
+
+    # ── 统计卡片 ──
+    import pandas as pd
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("候选池", f"{len(pool)} 只")
+    with c2:
+        industries = set(c.get("行业", "?") for c in pool)
+        st.metric("覆盖行业", f"{len(industries)} 个")
+    with c3:
+        has_report = sum(1 for c in pool if c.get("研报数", 0) > 0)
+        st.metric("有研报覆盖", f"{has_report} 只")
+    with c4:
+        with_signal = sum(1 for c in pool if c.get("信号分", 0) >= 2)
+        st.metric("强信号(≥2)", f"{with_signal} 只")
 
     # 表格展示 Top 30
     import pandas as pd
@@ -164,15 +214,39 @@ def render_discovery_page():
 # ═══════════════════════════════════════════
 
 def init_session():
-    """初始化 st.session_state"""
+    """初始化 st.session_state，自选股从文件恢复"""
     defaults = {
-        "favorites": [],      # [(code, name), ...]
-        "history": [],        # [(code, name), ...]  最近 10 条
-        "analyze_code": "",   # 触发分析的代码
+        "analyze_code": "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
+
+    # 自选股从本地文件加载
+    if "favorites" not in st.session_state:
+        try:
+            fav_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_cache", "favorites.json")
+            if os.path.exists(fav_path):
+                with open(fav_path, "r", encoding="utf-8") as f:
+                    st.session_state.favorites = json.load(f)
+            else:
+                st.session_state.favorites = []
+        except Exception:
+            st.session_state.favorites = []
+
+    if "history" not in st.session_state:
+        st.session_state.history = []
+
+
+def _save_favorites():
+    """持久化自选股到文件"""
+    try:
+        fav_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_cache", "favorites.json")
+        os.makedirs(os.path.dirname(fav_path), exist_ok=True)
+        with open(fav_path, "w", encoding="utf-8") as f:
+            json.dump(st.session_state.favorites, f, ensure_ascii=False)
+    except Exception:
+        pass
 
 
 def add_to_history(code: str, name: str):
@@ -185,7 +259,7 @@ def add_to_history(code: str, name: str):
 
 
 def toggle_favorite(code: str, name: str):
-    """切换自选状态"""
+    """切换自选状态，同时持久化"""
     favs = st.session_state.favorites
     existing = [c for c, _ in favs if c == code]
     if existing:
@@ -193,6 +267,7 @@ def toggle_favorite(code: str, name: str):
     else:
         favs.append((code, name))
         st.session_state.favorites = favs
+    _save_favorites()
 
 
 def is_favorite(code: str) -> bool:
