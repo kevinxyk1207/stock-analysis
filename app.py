@@ -119,7 +119,7 @@ def _cached_market_index():
     try:
         resp = requests.get(url, params=params, timeout=5)
         items = resp.json().get("data", {}).get("diff", [])
-        return [{"name": i["f14"], "price": i["f2"]/100, "pct": i["f3"]/100, "vol": i["f6"]} for i in items]
+        return [{"name": i["f14"], "price": i["f2"], "pct": i["f3"]/100, "vol": i["f6"]} for i in items]
     except Exception:
         return []
 
