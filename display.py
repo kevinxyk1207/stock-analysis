@@ -365,40 +365,63 @@ def render_deep_analysis(deep: dict):
 
 def render_deep_insights_combined(deep: dict, insights: dict):
     """合并显示预计算洞察和自动深度分析"""
-    # 先显示预计算的深度洞察（如果有）
-    has_precomputed = insights.get("verdict_override") or insights.get("deep_highlights") or insights.get("deep_risks")
-    if has_precomputed:
-        st.caption("—— 深度洞察（人工） ——")
-        render_insights(insights)
-        st.divider()
+    has_precomputed = bool(
+        insights.get("verdict_override") or
+        insights.get("deep_highlights") or
+        insights.get("deep_risks")
+    )
 
-    # 再显示自动深度分析
-    st.caption("—— 自动深度分析 ——")
-    render_deep_analysis(deep)
+    if has_precomputed:
+        # 有研报级深度洞察 → 重点展示
+        render_insights(insights)
+        # 自动基础分析折叠到底部，不抢焦点
+        with st.expander("基础财务分析（自动生成）", expanded=False):
+            render_deep_analysis(deep)
+    else:
+        # 无研报 → 显示自动分析 + 提示
+        st.info("深度研报撰写中，以下为基础财务分析")
+        render_deep_analysis(deep)
 
 
 def render_insights(insights: dict):
-    """深度洞察（预计算）"""
+    """深度洞察（研报级，预计算）"""
     verdict = insights.get("verdict_override", "")
     highlights = insights.get("deep_highlights", [])
     risks = insights.get("deep_risks", [])
 
     if not verdict and not highlights and not risks:
-        st.info("暂无深度洞察数据")
         return
 
+    # 综合判断 — 最醒目的蓝色卡片
     if verdict:
-        st.markdown(f"**综合判断**: {verdict}")
+        st.markdown(f"""
+        <div style="background:#e8f0fe; border-left:5px solid #1a73e8; padding:14px;
+                    border-radius:8px; margin:8px 0 16px 0;">
+            <div style="font-size:13px; color:#1a73e8; font-weight:bold; margin-bottom:4px;">
+                综合判断</div>
+            <div style="font-size:15px; color:#212121; line-height:1.6;">{verdict}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
+    # 核心亮点
     if highlights:
         st.markdown("**核心亮点**")
         for h in highlights:
-            st.markdown(f"- {h}")
+            st.markdown(f"""
+            <div style="font-size:13px; margin:3px 0 3px 12px; color:#2e7d32;">
+                ▸ {h}
+            </div>
+            """, unsafe_allow_html=True)
 
+    # 隐蔽风险
     if risks:
-        st.markdown("**隐蔽风险**")
+        st.markdown("<br>**隐蔽风险**", unsafe_allow_html=True)
         for r in risks:
-            st.markdown(f"- {r}")
+            st.markdown(f"""
+            <div style="font-size:13px; margin:3px 0 3px 12px; color:#c62828;">
+                ▸ {r}
+            </div>
+            """, unsafe_allow_html=True)
 
 
 def render_footer(meta: dict):
