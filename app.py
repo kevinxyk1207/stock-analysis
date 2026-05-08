@@ -119,16 +119,8 @@ def render_discovery_page():
     st.caption("全市场 Q1 暴增筛选 → 研报聚合 → 异常检测")
     st.divider()
 
-    if st.button("开始扫描", type="primary", use_container_width=True):
-        data = _cached_scanner()
-    else:
-        data = _cached_scanner() if st.session_state.get("_scan_done") else None
-
-    if data is None:
-        st.info("点击按钮扫描全市场（约 2-3 分钟）")
-        return
-
-    st.session_state["_scan_done"] = True
+    # 自动加载（首次 2-3 分钟，缓存 1 小时后秒出）
+    data = _cached_scanner()
 
     if "error" in data:
         st.warning(data["error"])
