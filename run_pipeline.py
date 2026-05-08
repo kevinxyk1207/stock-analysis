@@ -13,8 +13,8 @@ logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # 跨目录引用 stock_selection 的模块
-STOCK_SEL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "stock_selection")
-sys.path.insert(0, STOCK_SEL)
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
 
 from deep_research_v2 import deep_research
 from stock_analyzer import fetch_fundamentals_all
@@ -22,7 +22,7 @@ from stock_analyzer import fetch_fundamentals_all
 
 def load_refined():
     """读取 refine_filter 产出的精筛候选"""
-    path = os.path.join(STOCK_SEL, "data_cache", "refined_candidates.json")
+    path = os.path.join(HERE, "data_cache", "refined_candidates.json")
     if not os.path.exists(path):
         print("精筛候选文件不存在，先运行 refine_filter.py")
         return []
@@ -39,7 +39,7 @@ def load_b1_cache():
     hs300 = set(str(s).zfill(6) for s in fetcher.get_hs300_stocks()["code"].tolist())
 
     # 加载全量数据
-    cache_dir = os.path.join(STOCK_SEL, "data_cache")
+    cache_dir = os.path.join(HERE, "data_cache")
     config = B1Config(j_threshold=10.0, j_q_threshold=0.30, kdj_n=9,
         zx_m1=5, zx_m2=20, zx_m3=40, zx_m4=60, zxdq_span=10,
         wma_short=5, wma_mid=10, wma_long=15, max_vol_lookback=20)
@@ -138,7 +138,7 @@ def main():
         print(f"  {r['code']:<8} {r['name']:<8} {r['profit_yoy']:>+8.0f}% {r['score_60d']:>6.0f} {str(pe):>6} {r['overall_level']}")
 
     # 保存
-    out_path = os.path.join(STOCK_SEL, "data_cache", "pipeline_results.json")
+    out_path = os.path.join(HERE, "data_cache", "pipeline_results.json")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump({"date": datetime.now().strftime("%Y-%m-%d"), "results": results}, f, ensure_ascii=False, indent=2)

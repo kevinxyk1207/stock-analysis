@@ -106,6 +106,68 @@ def cached_analyze(code: str, _market: str, _fund_key: str, _insight_key: str):
 
 
 # ═══════════════════════════════════════════
+# 全市场发现页
+# ═══════════════════════════════════════════
+
+@st.cache_data(ttl=3600, show_spinner="正在扫描全市场...")
+def _cached_scanner():
+    from auto_scanner import run_scan
+    return run_scan()
+
+
+def render_discovery_page():
+    st.caption("全市场 Q1 暴增筛选 → 研报聚合 → 异常检测")
+    st.divider()
+
+    if st.button("开始扫描", type="primary", use_container_width=True):
+        data = _cached_scanner()
+    else:
+        data = _cached_scanner() if st.session_state.get("_scan_done") else None
+
+    if data is None:
+        st.info("点击按钮扫描全市场（约 2-3 分钟）")
+        return
+
+    st.session_state["_scan_done"] = True
+
+    if "error" in data:
+        st.warning(data["error"])
+        return
+
+    st.success(f"扫描完成 — {data['date']} — 全市场过滤出 {data['total_filtered']} 只")
+
+    pool = data.get("candidates", [])
+    if not pool:
+        st.info("无符合条件标的")
+        return
+
+    # 表格展示 Top 30
+    import pandas as pd
+    df = pd.DataFrame(pool[:30])
+    cols = ["代码", "名称", "行业", "利润增速%", "毛利率%", "ROE%", "估市值(亿)", "研报共识PE", "研报数", "信号分"]
+    df_show = df[[c for c in cols if c in df.columns]].copy()
+    if "利润增速%" in df_show.columns:
+        df_show["利润增速%"] = df_show["利润增速%"].round(0).astype(int)
+    if "毛利率%" in df_show.columns:
+        df_show["毛利率%"] = df_show["毛利率%"].round(1)
+    if "信号分" in df_show.columns:
+        df_show["信号分"] = df_show["信号分"].astype(int)
+
+    st.dataframe(
+        df_show,
+        use_container_width=True,
+        hide_index=True,
+        height=800,
+        column_config={
+            "代码": st.column_config.TextColumn(width="small"),
+            "名称": st.column_config.TextColumn(width="small"),
+        },
+    )
+
+    st.caption(f"候选池已缓存 1 小时，{len(pool)} 只股票 | 下一步：点击代码复制，到搜索页查看深度分析")
+
+
+# ═══════════════════════════════════════════
 # 会话状态
 # ═══════════════════════════════════════════
 
@@ -243,7 +305,13 @@ def render_search_box():
 def main():
     init_session()
 
-    st.title("选股分析")
+    st.title("B1 选股平台")
+    page = st.radio("", ["搜索个股", "全市场发现"], horizontal=True, label_visibility="collapsed")
+
+    if page == "全市场发现":
+        render_discovery_page()
+        return
+
     st.caption("搜索股票 → 深度分析")
 
     # 检查是否有从快捷入口传来的代码

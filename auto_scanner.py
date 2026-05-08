@@ -159,9 +159,9 @@ def detect_anomalies(df):
     return df
 
 
-def build_candidate_pool(df, consensus):
-    """构建候选池输出"""
-    candidates = df.head(30).copy()  # 取前30只
+def build_candidate_pool(df, consensus, top_n: int = 30):
+    """构建候选池输出。top_n=0 返回全部。"""
+    candidates = df if top_n == 0 else df.head(top_n).copy()
 
     rows = []
     for _, row in candidates.iterrows():
@@ -238,6 +238,24 @@ def main():
 
     print(f"\n候选池已保存: {OUTPUT_PATH}")
     print(f"下一步: Claude 对候选池新增标的做全网深度搜索")
+
+
+def run_scan(top_n: int = 0) -> dict:
+    """执行扫描并返回结果 dict。top_n=0 返回全部候选。"""
+    df = fetch_q1_data()
+    if df is None:
+        return {"error": "Q1数据获取失败", "candidates": [], "total_filtered": 0}
+    candidates = filter_financial(df)
+    if candidates.empty:
+        return {"error": "无符合条件的标的", "candidates": [], "total_filtered": 0}
+    candidates, consensus = add_analyst_consensus(candidates)
+    candidates = detect_anomalies(candidates)
+    pool = build_candidate_pool(candidates, consensus, top_n=top_n)
+    return {
+        "date": datetime.now().strftime("%Y-%m-%d"),
+        "total_filtered": len(candidates),
+        "candidates": pool,
+    }
 
 
 if __name__ == "__main__":
