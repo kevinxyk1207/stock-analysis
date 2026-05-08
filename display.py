@@ -240,7 +240,7 @@ def render_fundamentals(fin: dict):
 
     c1, c2, c3 = st.columns(3)
 
-    def _show(label, val, unit=""):
+    def _show(label, val, unit=""):  # label kept for caller compatibility
         if val is not None:
             try:
                 v = float(val)
@@ -269,8 +269,116 @@ def render_fundamentals(fin: dict):
         st.caption(f"EPS: {_show(eps, eps)}")
 
 
+def render_deep_analysis(deep: dict):
+    """深度分析：公司画像 + 财务健康扫描 + 发展阶段"""
+    if not deep:
+        st.info("暂无深度分析数据")
+        return
+
+    profile = deep.get("profile", {})
+    health = deep.get("financial_health", {})
+    stage = deep.get("stage", {})
+    verdict = deep.get("verdict", "")
+
+    # 综合判断
+    if verdict:
+        st.markdown(f"""
+        <div style="background:#e3f2fd; border-left:4px solid #1a73e8; padding:12px;
+                    border-radius:8px; margin:8px 0;">
+            <strong>综合判断</strong><br>{verdict}
+        </div>
+        """, unsafe_allow_html=True)
+
+    # 公司画像
+    if profile:
+        industry = profile.get("industry", "")
+        cap = profile.get("market_cap")
+        listed = profile.get("listed_date", "")
+        cap_str = f"{cap/1e8:.0f}亿" if cap else "N/A"
+        listed_str = str(listed)[:4] + "年上市" if listed and len(str(listed)) >= 4 else "N/A"
+
+        st.caption("—— 公司画像 ——")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.metric("行业", industry or "N/A")
+        with c2:
+            st.metric("市值", cap_str)
+        with c3:
+            st.metric("上市", listed_str)
+
+        if health.get("cap_note"):
+            st.caption(health["cap_note"])
+
+    # 发展阶段
+    if stage:
+        stage_name = stage.get("stage", "")
+        stage_colors = {"确认期": "#2e7d32", "验证期": "#43a047", "验证初期": "#66bb6a",
+                        "故事期": "#f9a825", "收缩期": "#c62828", "成熟期": "#1565c0"}
+        color = stage_colors.get(stage_name, "#666")
+        st.markdown(f"""
+        <div style="display:flex; align-items:center; gap:8px; margin:8px 0;">
+            <span style="background:{color}; color:white; padding:2px 10px; border-radius:12px;
+                         font-size:14px; font-weight:bold;">{stage_name}</span>
+            <span style="color:#555;">{stage.get('stage_desc', '')}</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # 财务健康扫描
+    if health:
+        h_score = health.get("health_score", 0)
+        h_label = health.get("health", "")
+        h_color = "#2e7d32" if h_score >= 60 else "#f9a825" if h_score >= 40 else "#c62828"
+        st.markdown(f"""
+        <div style="display:flex; align-items:center; gap:8px; margin:8px 0;">
+            <span style="font-weight:bold;">财务健康度:</span>
+            <span style="background:{h_color}; color:white; padding:2px 10px; border-radius:12px;
+                         font-size:14px;">{h_label} {h_score}分</span>
+            <span style="color:#555;">{health.get('health_desc', '')}</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # 各项检查
+        checks = health.get("checks", [])
+        if checks:
+            good_count = sum(1 for c in checks if c["good"])
+            total = len(checks)
+            st.caption(f"财务检查通过 {good_count}/{total}")
+            for c in checks:
+                icon = "✅" if c["good"] else "⚠️"
+                detail = c.get("detail", "")
+                st.markdown(f"{icon} **{c['item']}**: {c['status']} ({detail})")
+
+    # 亮点
+    highlights = health.get("highlights", [])
+    if highlights:
+        st.markdown("**亮点**")
+        for h in highlights:
+            st.markdown(f"✅ {h}")
+
+    # 风险
+    warnings = health.get("warnings", [])
+    if warnings:
+        st.markdown("**风险提示**")
+        for w in warnings:
+            st.markdown(f"⚠️ {w}")
+
+
+def render_deep_insights_combined(deep: dict, insights: dict):
+    """合并显示预计算洞察和自动深度分析"""
+    # 先显示预计算的深度洞察（如果有）
+    has_precomputed = insights.get("verdict_override") or insights.get("deep_highlights") or insights.get("deep_risks")
+    if has_precomputed:
+        st.caption("—— 深度洞察（人工） ——")
+        render_insights(insights)
+        st.divider()
+
+    # 再显示自动深度分析
+    st.caption("—— 自动深度分析 ——")
+    render_deep_analysis(deep)
+
+
 def render_insights(insights: dict):
-    """深度洞察"""
+    """深度洞察（预计算）"""
     verdict = insights.get("verdict_override", "")
     highlights = insights.get("deep_highlights", [])
     risks = insights.get("deep_risks", [])

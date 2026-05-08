@@ -22,6 +22,7 @@ elif os.path.isdir(_ENGINE_PATH):
 
 from enhanced_fetcher import EnhancedStockFetcher, load_stock_name_map
 from b1_selector import B1Selector, B1Config
+from deep_analyzer import deep_analyze
 
 
 # ── B1 配置 ──
@@ -143,7 +144,10 @@ class SingleStockAnalyzer:
         is_bull = market_state.get("is_bull", True)
         operation = get_operation_suggestion(star_result["stars"], is_bull, star_result["risks"])
 
-        # 12. 组装返回
+        # 12. 深度分析（公司画像+风险扫描+阶段判断）
+        deep = deep_analyze(code, fundamentals, market_state.get("market_cap"))
+
+        # 13. 组装返回
         return {
             "meta": {
                 "code": code,
@@ -217,6 +221,7 @@ class SingleStockAnalyzer:
             "fundamentals": fundamentals,
             "insights": deep_insights,
             "risks": star_result["risks"],
+            "deep": deep,
         }
 
 

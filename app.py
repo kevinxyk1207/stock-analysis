@@ -55,9 +55,9 @@ def cached_market_state():
     return detect_market_state()
 
 
-@st.cache_data(ttl=86400, show_spinner=False)
+@st.cache_resource
 def cached_analyzer():
-    """缓存的 SingleStockAnalyzer 实例"""
+    """缓存的 SingleStockAnalyzer 实例（含 baostock 连接，需 cache_resource）"""
     from stock_analyzer import SingleStockAnalyzer
     return SingleStockAnalyzer()
 
@@ -138,7 +138,7 @@ def main():
             render_price_card, render_star_verdict, render_risk_warnings,
             render_scores, render_b1_conditions, render_indicators_table,
             render_price_levels, render_returns, render_fundamentals,
-            render_insights, render_footer,
+            render_insights, render_deep_insights_combined, render_footer,
         )
 
         st.divider()
@@ -158,32 +158,34 @@ def main():
 
         st.divider()
 
-        # 5. B1 核心条件（折叠默认展开，因为重要）
+        # 5. 深度分析（公司画像+财务扫描+阶段判断，直接展开）
+        st.subheader("深度分析")
+        deep = result.get("deep", {})
+        insights = result.get("insights", {})
+        render_deep_insights_combined(deep, insights)
+
+        st.divider()
+
+        # 6. B1 核心条件
         with st.expander("B1 核心五条件", expanded=True):
             render_b1_conditions(result["b1_conditions"])
 
-        # 6. 技术指标
+        # 7. 技术指标
         render_indicators_table(result["indicators"])
 
         st.divider()
 
-        # 7. 关键价位
+        # 8. 关键价位
         render_price_levels(result["price_levels"], result["price"]["close"])
 
-        # 8. 区间收益
+        # 9. 区间收益
         render_returns(result["returns"])
 
         st.divider()
 
-        # 9. 基本面（折叠）
+        # 10. 基本面（折叠）
         with st.expander("基本面数据", expanded=False):
             render_fundamentals(result["fundamentals"])
-
-        # 10. 深度洞察（折叠）
-        insights = result.get("insights", {})
-        if insights.get("verdict_override") or insights.get("deep_highlights"):
-            with st.expander("深度洞察", expanded=False):
-                render_insights(insights)
 
         # 11. 页脚
         render_footer(result["meta"])
