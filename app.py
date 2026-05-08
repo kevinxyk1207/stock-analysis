@@ -85,18 +85,16 @@ def cached_market_state():
 @st.cache_data(ttl=3600, show_spinner=False)
 def cached_analyze(code: str, _market: str, _fund_key: str, _insight_key: str):
     from stock_analyzer import SingleStockAnalyzer, fetch_fundamentals_all, detect_market_state
-    from deep_research import get_or_research
     import gc
 
     analyzer = SingleStockAnalyzer()
     fundamentals_all = fetch_fundamentals_all()
-    deep_insights_data = get_or_research(code)
     market = detect_market_state(analyzer.fetcher)
 
     result = analyzer.analyze(
         code,
         fundamentals=fundamentals_all.get(code, {}),
-        deep_insights=deep_insights_data,
+        deep_insights={},  # 深度洞察独立获取，不阻塞主分析
         market_state=market,
     )
     del analyzer
@@ -283,6 +281,12 @@ def main():
 
         status.update(label="分析完成", state="complete")
 
+        # 独立获取深度洞察（不阻塞主分析，失败不影响展示）
+        try:
+            deep_insights = cached_deep_research(code)
+        except Exception:
+            deep_insights = {}
+
         # 记录历史
         add_to_history(code, result["meta"]["name"])
 
@@ -320,7 +324,7 @@ def main():
 
         # 深度分析
         st.subheader("深度分析")
-        render_deep_insights_combined(result.get("deep", {}), result.get("insights", {}))
+        render_deep_insights_combined(result.get("deep", {}), deep_insights)
 
         st.divider()
 

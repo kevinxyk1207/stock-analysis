@@ -68,25 +68,26 @@ def get_business_description(code: str) -> dict:
 
 
 def get_industry_peers(code: str) -> list:
-    """获取同行业可比公司（通过研报的行业分类）"""
+    """获取同行业可比公司（通过个股研报的行业标签，不拉全市场数据）"""
     try:
         import akshare as ak
-        # 先获取个股行业（列13）
         df = ak.stock_research_report_em(symbol=code)
         if df is None or df.empty:
             return []
+        # 直接从个股研报中提取行业，然后找同行业股票
         cols = list(df.columns)
         industry = str(df.iloc[0, 13]) if len(cols) > 13 else ""
-
-        # 获取全部最新研报，筛选同行业
-        all_df = ak.stock_research_report_em()
-        if all_df is None or all_df.empty:
+        if not industry:
             return []
-        all_cols = list(all_df.columns)
-        # 列1是股票代码，列13是行业
-        same_industry = all_df[all_df.iloc[:, 13] == industry] if industry else all_df.head(0)
-        peers = list(same_industry.iloc[:, 1].unique())[:6]
-        return [str(p).zfill(6) for p in peers if str(p).zfill(6) != code]
+
+        # 仅用最近一批研报中的同行业股票（不去拉全市场数据）
+        peers = set()
+        for _, row in df.head(20).iterrows():
+            if len(cols) > 13 and str(row.iloc[13]) == industry:
+                code_from_report = str(row.iloc[1]).zfill(6)
+                if code_from_report != code:
+                    peers.add(code_from_report)
+        return list(peers)[:5]
     except Exception:
         return []
 
@@ -271,31 +272,44 @@ def load_all_insights() -> dict:
 
 
 def save_all_insights(insights: dict):
-    """保存全部洞察"""
-    _here = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(_here, "fundamental_insights.json")
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump({"updated": datetime.now().strftime("%Y-%m-%d"), "stocks": insights},
-                  f, ensure_ascii=False, indent=2)
+    """保存全部洞察（容错：云端只读文件系统时静默跳过）"""
+    try:
+        _here = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(_here, "fundamental_insights.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"updated": datetime.now().strftime("%Y-%m-%d"), "stocks": insights},
+                      f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass  # 云端文件系统只读时跳过
 
 
 def get_or_research(code: str) -> dict:
     """
     获取深度洞察：已有则返回，没有则自动挖掘并缓存
+    所有错误都会静默处理，确保不影响主分析流程
     """
     all_insights = load_all_insights()
 
-    if code in all_insights and all_insights[code].get("deep_highlights"):
-        # 判断是否需要更新（超过7天）
-        return all_insights[code]
+    # 已有高质量洞察（人工撰写或自动挖掘过的）直接返回
+    if code in all_insights:
+        entry = all_insights[code]
+        if isinstance(entry, dict) and entry.get("deep_highlights"):
+            return entry
 
-    # 自动挖掘
+    # 自动挖掘（每个 API 调用独立容错）
     try:
         new_insight = deep_research_stock(code)
-        all_insights[code] = new_insight
-        save_all_insights(all_insights)
-        return new_insight
-    except Exception as e:
-        # 回退：返回已有的或空
-        return all_insights.get(code, {"verdict_override": f"自动挖掘暂不可用: {e}"})
+        if new_insight and new_insight.get("deep_highlights"):
+            all_insights[code] = new_insight
+            save_all_insights(all_insights)
+            return new_insight
+    except Exception:
+        pass
+
+    # 回退：已有数据或空模板
+    return all_insights.get(code, {
+        "verdict_override": "",
+        "deep_highlights": [],
+        "deep_risks": [],
+    })
