@@ -34,37 +34,32 @@ elif os.path.isdir(_ENGINE_PATH):
 # 缓存数据层
 # ═══════════════════════════════════════════
 
-@st.cache_data(ttl=86400, show_spinner=False)
+@st.cache_data(ttl=86400, show_spinner="正在加载股票列表...")
 def build_search_index():
-    """构建全 A 股搜索索引 {搜索词: [(code, name), ...]}"""
+    """构建全 A 股搜索索引（从本地文件，秒出）"""
+    import json
+    from collections import defaultdict
+
+    # 从本地 JSON 加载（不依赖网络）
+    json_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stock_names.json")
     try:
-        import akshare as ak
-        df = ak.stock_info_a_code_name()
+        with open(json_path, encoding="utf-8") as f:
+            name_map = json.load(f)
     except Exception:
         return {}
 
-    from collections import defaultdict
     index = defaultdict(list)
-
-    for _, row in df.iterrows():
-        code = str(row.get("code", "")).zfill(6)
-        name = str(row.get("name", ""))
-        if not code or not name or not code[0].isdigit():
-            continue
-
+    for code, name in name_map.items():
         entry = (code, name)
-        # 代码
+        # 代码匹配
         index[code].append(entry)
-        # 名称
+        # 名称全匹配
         index[name].append(entry)
-        # 名称每个字拆分（支持单字搜索，如"茅"）
+        # 名称单字拆解（搜"茅"→ 找到茅台）
         for char in name:
-            if len(char.strip()) > 0:
+            if char.strip():
                 index[char].append(entry)
-        # 拼音首字母（简单处理：取名称每个字的拼音首字母做模糊）
-        # 不自动生成拼音，用户输入拼音时匹配名称即可
 
-    # 去重
     return {k: list(set(v)) for k, v in index.items()}
 
 
