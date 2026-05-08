@@ -291,7 +291,8 @@ def main():
             render_price_card, render_star_verdict, render_risk_warnings,
             render_scores, render_b1_conditions, render_indicators_table,
             render_price_levels, render_returns, render_fundamentals,
-            render_deep_insights_combined, render_footer,
+            render_deep_insights_combined, render_kline_chart,
+            render_peer_comparison, render_footer,
         )
 
         st.divider()
@@ -339,6 +340,18 @@ def main():
         render_returns(result["returns"])
 
         st.divider()
+
+        # K线图
+        chart_data = result.get("chart_data", [])
+        if chart_data:
+            render_kline_chart(chart_data, result["meta"]["name"])
+
+        st.divider()
+
+        # 同行业对比
+        peers = result.get("peers", [])
+        if peers:
+            render_peer_comparison(peers, code, result.get("market", {}), cached_fundamentals())
 
         # 基本面（折叠）
         with st.expander("基本面数据", expanded=False):

@@ -147,7 +147,24 @@ class SingleStockAnalyzer:
         # 12. 深度分析（公司画像+风险扫描+阶段判断）
         deep = deep_analyze(code, fundamentals, market_state.get("market_cap"))
 
-        # 13. 组装返回
+        # 13. K线图数据（最近60日OHLCV + 均线 + 知行线）
+        chart_df = prepared.iloc[-60:].copy()
+        chart_data = []
+        for idx, row in chart_df.iterrows():
+            chart_data.append({
+                "date": str(idx)[:10],
+                "open": round(float(row["open"]), 2),
+                "high": round(float(row["high"]), 2),
+                "low": round(float(row["low"]), 2),
+                "close": round(float(row["close"]), 2),
+                "volume": int(row["volume"]),
+                "ma5": round(float(row.get("ma_5", row["close"])), 2),
+                "ma20": round(float(row.get("ma_20", row["close"])), 2),
+                "ma60": round(float(row.get("ma_60", row["close"])), 2),
+                "zxdkx": round(float(row.get("zxdkx", row["close"])), 2),
+            })
+
+        # 14. 组装返回
         return {
             "meta": {
                 "code": code,
@@ -222,6 +239,8 @@ class SingleStockAnalyzer:
             "insights": deep_insights,
             "risks": star_result["risks"],
             "deep": deep,
+            "chart_data": chart_data,
+            "peers": [str(p) for p in deep.get("peers", [])] if isinstance(deep, dict) else [],
         }
 
 

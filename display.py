@@ -424,6 +424,133 @@ def render_insights(insights: dict):
             """, unsafe_allow_html=True)
 
 
+def render_kline_chart(chart_data: list, stock_name: str = ""):
+    """Plotly K线图 + MA5/MA20/MA60 + ZXDKX"""
+    if not chart_data or len(chart_data) < 10:
+        st.info("K线数据不足")
+        return
+
+    try:
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+    except ImportError:
+        st.info("Plotly 未安装，无法显示K线图")
+        return
+
+    dates = [d["date"] for d in chart_data]
+    opens = [d["open"] for d in chart_data]
+    highs = [d["high"] for d in chart_data]
+    lows = [d["low"] for d in chart_data]
+    closes = [d["close"] for d in chart_data]
+
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True,
+        row_heights=[0.75, 0.25],
+        vertical_spacing=0.03,
+    )
+
+    # K线
+    fig.add_trace(
+        go.Candlestick(
+            x=dates, open=opens, high=highs, low=lows, close=closes,
+            name="K线",
+            increasing_line_color="#ef5350", decreasing_line_color="#26a69a",
+        ),
+        row=1, col=1,
+    )
+
+    # 均线 + 知行线
+    ma_configs = [
+        ("ma5", "#FFC107", "MA5"),
+        ("ma20", "#9C27B0", "MA20"),
+        ("ma60", "#2196F3", "MA60"),
+        ("zxdkx", "#F44336", "ZXDKX"),
+    ]
+    for key, color, name in ma_configs:
+        vals = [d.get(key) for d in chart_data]
+        if any(v is not None for v in vals):
+            fig.add_trace(
+                go.Scatter(x=dates, y=vals, name=name,
+                           line=dict(color=color, width=1.5 if name == "ZXDKX" else 1),
+                           legendgroup=name),
+                row=1, col=1,
+            )
+
+    # 成交量柱
+    volumes = [d["volume"] for d in chart_data]
+    colors = ["#ef5350" if closes[i] >= opens[i] else "#26a69a" for i in range(len(dates))]
+    fig.add_trace(
+        go.Bar(x=dates, y=volumes, name="量", marker_color=colors,
+               opacity=0.5, showlegend=False),
+        row=2, col=1,
+    )
+
+    # 布局
+    fig.update_layout(
+        title=f"{stock_name} 最近 60 日",
+        height=420,
+        margin=dict(l=0, r=0, t=35, b=0),
+        xaxis_rangeslider_visible=False,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        font=dict(size=11),
+        paper_bgcolor="white",
+        plot_bgcolor="#fafafa",
+    )
+    fig.update_xaxes(showgrid=False)
+    fig.update_yaxes(title_text="价格", row=1, col=1, showgrid=True, gridcolor="#eee")
+    fig.update_yaxes(title_text="成交量", row=2, col=1, showgrid=False)
+
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+
+def render_peer_comparison(peers: list, current_code: str, market_state: dict, fund_all: dict):
+    """同行业对比表"""
+    if not peers:
+        return
+
+    st.caption("—— 同行业对比 ——")
+
+    rows = []
+    codes_to_fetch = [current_code] + [p for p in peers if p != current_code][:4]
+
+    for code in codes_to_fetch:
+        fin = fund_all.get(code, {}) if fund_all else {}
+        rev_g = _safe_float(fin.get("revenue_growth"))
+        margin = _safe_float(fin.get("gross_margin"))
+        roe = _safe_float(fin.get("roe"))
+        prf_g = _safe_float(fin.get("profit_growth"))
+
+        rows.append({
+            "代码": code,
+            "营收增速": f"{rev_g:+.1f}%" if rev_g is not None else "N/A",
+            "毛利率": f"{margin:.1f}%" if margin is not None else "N/A",
+            "ROE": f"{roe:.1f}%" if roe is not None else "N/A",
+            "利润增速": f"{prf_g:+.1f}%" if prf_g is not None else "N/A",
+        })
+
+    if len(rows) <= 1:
+        return
+
+    import pandas as pd
+    df = pd.DataFrame(rows)
+
+    # 高亮当前股票行
+    def highlight_current(row):
+        if row["代码"] == current_code:
+            return ["background-color: #e3f2fd; font-weight: bold"] * len(row)
+        return [""] * len(row)
+
+    styled = df.style.apply(highlight_current, axis=1)
+    st.dataframe(styled, hide_index=True, use_container_width=True)
+
+
+def _safe_float(val) -> float | None:
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return None
+
+
 def render_footer(meta: dict):
     """页脚"""
     st.divider()
