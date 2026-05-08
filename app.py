@@ -69,10 +69,11 @@ def cached_fundamentals():
     return fetch_fundamentals_all()
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def cached_deep_insights():
-    from stock_analyzer import load_deep_insights
-    return load_deep_insights()
+@st.cache_data(ttl=86400, show_spinner=False)
+def cached_deep_research(code: str):
+    """深度洞察：已有返回缓存，无则自动挖掘研报+主营+财务"""
+    from deep_research import get_or_research
+    return get_or_research(code)
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -83,18 +84,19 @@ def cached_market_state():
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def cached_analyze(code: str, _market: str, _fund_key: str, _insight_key: str):
-    from stock_analyzer import SingleStockAnalyzer, fetch_fundamentals_all, load_deep_insights, detect_market_state
+    from stock_analyzer import SingleStockAnalyzer, fetch_fundamentals_all, detect_market_state
+    from deep_research import get_or_research
     import gc
 
     analyzer = SingleStockAnalyzer()
     fundamentals_all = fetch_fundamentals_all()
-    deep_insights_all = load_deep_insights()
+    deep_insights_data = get_or_research(code)
     market = detect_market_state(analyzer.fetcher)
 
     result = analyzer.analyze(
         code,
         fundamentals=fundamentals_all.get(code, {}),
-        deep_insights=deep_insights_all.get(code, {}),
+        deep_insights=deep_insights_data,
         market_state=market,
     )
     del analyzer
@@ -271,7 +273,7 @@ def main():
             code,
             _market=market.get("status", ""),
             _fund_key=str(len(cached_fundamentals())),
-            _insight_key=str(len(cached_deep_insights())),
+            _insight_key=str(len(cached_deep_research(code))),
         )
 
         if result.get("error"):
