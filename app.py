@@ -62,6 +62,34 @@ def cached_analyzer():
     return SingleStockAnalyzer()
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_analyze(code: str, market_status: str, fundamentals_key: str, insights_key: str):
+    """
+    缓存单股分析结果（当天同一股票秒出）
+
+    参数中加入 market_status/fundamentals_key 确保数据源更新时缓存失效。
+    实际分析数据从缓存的全局数据中提取。
+    """
+    from stock_analyzer import SingleStockAnalyzer, fetch_fundamentals_all, load_deep_insights, detect_market_state
+    import gc
+
+    analyzer = SingleStockAnalyzer()
+    fundamentals_all = fetch_fundamentals_all()
+    deep_insights_all = load_deep_insights()
+    market = detect_market_state(analyzer.fetcher)
+
+    result = analyzer.analyze(
+        code,
+        fundamentals=fundamentals_all.get(code, {}),
+        deep_insights=deep_insights_all.get(code, {}),
+        market_state=market,
+    )
+    # 释放连接
+    del analyzer
+    gc.collect()
+    return result
+
+
 # ── 主页面 ──
 
 def main():
@@ -111,19 +139,15 @@ def main():
     status = st.status(f"正在分析 {code}...", expanded=True)
 
     try:
-        # 获取缓存数据
-        status.write("加载市场数据...")
+        # 获取市场状态（用于缓存 key）
         market = cached_market_state()
-        fundamentals_all = cached_fundamentals()
-        deep_insights_all = cached_deep_insights()
-        analyzer = cached_analyzer()
+        status.write("正在分析（首次较慢，再次查询秒出）...")
 
-        status.write("获取行情数据...")
-        result = analyzer.analyze(
+        result = cached_analyze(
             code,
-            fundamentals=fundamentals_all.get(code, {}),
-            deep_insights=deep_insights_all.get(code, {}),
-            market_state=market,
+            market_status=market.get("status", ""),
+            fundamentals_key=str(len(cached_fundamentals())),
+            insights_key=str(len(cached_deep_insights())),
         )
 
         if result.get("error"):
