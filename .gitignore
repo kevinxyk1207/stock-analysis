@@ -1,4 +1,5 @@
-# 选股分析 Web
-__pycache__/
 data_cache/
+reports/
+__pycache__/
 *.pyc
+.streamlit/
