@@ -329,9 +329,10 @@ def fetch_fundamentals_all() -> dict:
 # ── 深度洞察加载 ──
 
 def load_deep_insights() -> dict:
-    """加载 fundamental_insights.json（优先本地 data_cache，再回退 stock_selection）"""
+    """加载 fundamental_insights.json（项目根 > data_cache > stock_selection）"""
     _here = os.path.dirname(os.path.abspath(__file__))
     paths = [
+        os.path.join(_here, "fundamental_insights.json"),
         os.path.join(_here, "data_cache", "fundamental_insights.json"),
         os.path.join(_here, "..", "stock_selection", "data_cache", "fundamental_insights.json"),
     ]
