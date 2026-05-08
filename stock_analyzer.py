@@ -11,14 +11,8 @@ from typing import Dict, Optional, Tuple
 import pandas as pd
 import numpy as np
 
-# 导入引擎：优先当前目录（部署模式），再回退到 stock_selection（开发模式）
 _LOCAL_DIR = os.path.dirname(os.path.abspath(__file__))
-_ENGINE_PATH = os.path.join(_LOCAL_DIR, "..", "stock_selection")
-
-if os.path.exists(os.path.join(_LOCAL_DIR, "enhanced_fetcher.py")):
-    sys.path.insert(0, _LOCAL_DIR)
-elif os.path.isdir(_ENGINE_PATH):
-    sys.path.insert(0, _ENGINE_PATH)
+sys.path.insert(0, _LOCAL_DIR)
 
 from enhanced_fetcher import EnhancedStockFetcher, load_stock_name_map
 from b1_selector import B1Selector, B1Config
@@ -348,12 +342,11 @@ def fetch_fundamentals_all() -> dict:
 # ── 深度洞察加载 ──
 
 def load_deep_insights() -> dict:
-    """加载 fundamental_insights.json（项目根 > data_cache > stock_selection）"""
+    """加载 fundamental_insights.json"""
     _here = os.path.dirname(os.path.abspath(__file__))
     paths = [
         os.path.join(_here, "fundamental_insights.json"),
         os.path.join(_here, "data_cache", "fundamental_insights.json"),
-        os.path.join(_here, "..", "stock_selection", "data_cache", "fundamental_insights.json"),
     ]
     for p in paths:
         if os.path.exists(p):

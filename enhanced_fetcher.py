@@ -1,13 +1,11 @@
-"""
-增强版数据获取模块
-解决代理连接问题，支持多种数据源
-"""
+"""增强版数据获取模块"""
 import pandas as pd
 import numpy as np
 import logging
 import time
 import os
 import sys
+import json
 from typing import Optional, List, Dict, Tuple
 import random
 import requests
@@ -1029,12 +1027,16 @@ def load_cache_data(cache_dir: str = None, min_rows: int = 200,
 
 
 def load_stock_name_map() -> Dict[str, str]:
-    """
-    加载A股股票名称映射表 {code: name}
-
-    Returns:
-        {股票代码(6位): 股票名称} 字典
-    """
+    """加载A股股票名称映射表。优先从本地 stock_names.json，秒出。"""
+    here = os.path.dirname(os.path.abspath(__file__))
+    local_path = os.path.join(here, "stock_names.json")
+    try:
+        if os.path.exists(local_path):
+            with open(local_path, encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    # 本地文件不存在，回退到 akshare（较慢）
     try:
         import akshare as ak
         df = ak.stock_info_a_code_name()

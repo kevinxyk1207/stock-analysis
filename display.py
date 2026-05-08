@@ -34,22 +34,45 @@ def fmt_val(v):
 
 # ── 渲染函数 ──
 
-def render_price_card(meta: dict, price: dict, market: dict):
-    """股票概要卡片"""
-    col1, col2, col3 = st.columns([2, 1, 1])
+def render_price_card(meta: dict, price: dict, market: dict, realtime: dict | None = None):
+    """股票概要卡片。realtime 为实时行情 dict 时优先展示。"""
+    col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
     with col1:
         st.subheader(f"{meta['name']} ({meta['code']})")
     with col2:
-        change = price["change_pct"]
-        delta_str = f"{change:+.2f}%"
-        st.metric("现价", f"{price['close']:.2f}", delta=delta_str)
-    with col3:
-        if market["is_bull"]:
-            st.success("牛 市")
+        if realtime and realtime.get("price"):
+            rt_price = realtime["price"]
+            rt_pct = realtime.get("change_pct", 0) or 0
+            st.metric(
+                "实时价",
+                f"{rt_price:.2f}",
+                delta=f"{rt_pct:+.2f}%",
+                delta_color="normal",
+            )
         else:
-            st.error("熊 市")
+            pct = price.get("change_pct", 0) or 0
+            st.metric("收盘价", f"{price['close']:.2f}", delta=f"{pct:+.2f}%")
+    with col3:
+        if realtime and realtime.get("price"):
+            rt_vol = realtime.get("turnover", 0) or 0
+            vol_str = f"{rt_vol/1e8:.2f}亿" if rt_vol > 1e8 else f"{rt_vol/1e4:.0f}万"
+            st.metric("成交额", vol_str)
+        else:
+            vol = price.get("volume", 0) or 0
+            vol_str = f"{vol/1e8:.2f}亿" if vol > 1e8 else f"{vol/1e4:.0f}万"
+            st.metric("成交量", vol_str)
+    with col4:
+        if market["is_bull"]:
+            st.success("牛市")
+        else:
+            st.error("熊市")
 
-    st.caption(f"数据日期: {meta['last_date']} | {market.get('note', '')}")
+    if realtime and realtime.get("price"):
+        rt_data_note = f"实时数据 {realtime.get('time', '')}"
+        hist_note = f"昨收 {price['close']:.2f} | {market.get('note', '')}"
+        st.caption(f"{rt_data_note} | {hist_note}")
+    else:
+        st.caption(f"数据日期: {meta['last_date']} | {market.get('note', '')}")
 
 
 def render_star_verdict(star: dict, operation: str):
@@ -542,6 +565,104 @@ def render_peer_comparison(peers: list, current_code: str, market_state: dict, f
 
     styled = df.style.apply(highlight_current, axis=1)
     st.dataframe(styled, hide_index=True, use_container_width=True)
+
+
+def render_deep_research_v2(result: dict):
+    """五维度深度研究结果"""
+    if not result or not result.get("dimensions"):
+        return
+
+    overall = result["overall_level"]
+    colors = {"green": ("#2e7d32", "#e8f5e9"), "yellow": ("#f57f17", "#fff8e1"),
+              "red": ("#c62828", "#ffebee")}
+    border, bg = colors.get(overall, colors["green"])
+
+    st.markdown(f"""
+    <div style="background:{bg}; border-left:5px solid {border}; padding:12px;
+                border-radius:8px; margin:8px 0 16px 0;">
+        <div style="font-size:13px; color:{border}; font-weight:bold;">
+            {overall.upper()} | {result['verdict']}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Warnings first
+    warnings = result.get("warnings", [])
+    if warnings:
+        with st.expander(f"风险信号 ({len(warnings)})", expanded=True):
+            for w in warnings:
+                st.markdown(f"""
+                <div style="font-size:13px; margin:2px 0; color:#c62828;">{w}</div>
+                """, unsafe_allow_html=True)
+
+    # Dimensions
+    cols = st.columns(2)
+    for i, dim in enumerate(result["dimensions"]):
+        level = dim["level"]
+        icons = {"green": "OK", "yellow": "--", "red": "!!"}
+        icon = icons.get(level, "--")
+        with cols[i % 2]:
+            with st.container(border=True):
+                st.caption(f"[{icon}] {dim['dimension']}: {dim['summary']}")
+                for sig in dim.get("signals", [])[:3]:
+                    st.caption(f"  {sig}")
+
+
+def render_intraday_chart(code: str, stock_name: str = ""):
+    """Plotly 日内分时图（1分钟K线）"""
+    from real_time import get_intraday_chart
+    candles = get_intraday_chart(code, period="1")
+    if not candles or len(candles) < 5:
+        return
+
+    try:
+        import plotly.graph_objects as go
+    except ImportError:
+        return
+
+    times = [c["time"] for c in candles]
+    closes = [c["close"] for c in candles]
+    prev_close = candles[0]["open"] if candles else closes[0]
+
+    fig = go.Figure()
+
+    # 分时线
+    fig.add_trace(go.Scatter(
+        x=times, y=closes, name="价格",
+        line=dict(color="#e53935", width=1.5),
+        mode="lines",
+    ))
+
+    # 昨收参考线
+    fig.add_hline(y=prev_close, line_dash="dash", line_color="#999",
+                  annotation_text=f"昨收 {prev_close:.2f}")
+
+    # Y 轴着色：相对昨收红涨绿跌
+    y_min = min(closes) * 0.998
+    y_max = max(closes) * 1.002
+
+    fig.update_layout(
+        title=f"{stock_name} 今日分时图",
+        height=300,
+        margin=dict(l=0, r=0, t=35, b=0),
+        font=dict(size=11),
+        paper_bgcolor="white",
+        plot_bgcolor="#fafafa",
+        xaxis=dict(showgrid=False, dtick=30),
+        yaxis=dict(showgrid=True, gridcolor="#eee", range=[y_min, y_max]),
+        showlegend=False,
+    )
+
+    chg_pct = (closes[-1] - prev_close) / prev_close * 100 if prev_close else 0
+    color = "#e53935" if chg_pct >= 0 else "#26a69a"
+    fig.add_annotation(
+        x=times[-1], y=closes[-1],
+        text=f"{closes[-1]:.2f} ({chg_pct:+.2f}%)",
+        showarrow=True, arrowhead=0, ax=40, ay=0,
+        font=dict(color=color, size=12, family="monospace"),
+    )
+
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 
 def _safe_float(val) -> float | None:

@@ -5,6 +5,7 @@
 import streamlit as st
 import sys
 import os
+import json
 import traceback
 
 # ── 页面配置（必须第一个 st 调用） ──
@@ -21,13 +22,8 @@ st.set_page_config(
 )
 
 # ── 导入引擎路径 ──
-_ENGINE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "stock_selection")
 _LOCAL_PATH = os.path.dirname(os.path.abspath(__file__))
-
-if os.path.exists(os.path.join(_LOCAL_PATH, "enhanced_fetcher.py")):
-    sys.path.insert(0, _LOCAL_PATH)
-elif os.path.isdir(_ENGINE_PATH):
-    sys.path.insert(0, _ENGINE_PATH)
+sys.path.insert(0, _LOCAL_PATH)
 
 
 # ═══════════════════════════════════════════
@@ -61,6 +57,13 @@ def build_search_index():
                 index[char].append(entry)
 
     return {k: list(set(v)) for k, v in index.items()}
+
+
+@st.cache_data(ttl=5, show_spinner=False)
+def cached_realtime_quote(code: str):
+    """实时行情，短 TTL（5 秒）"""
+    from real_time import get_realtime_quote
+    return get_realtime_quote(code)
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
@@ -264,6 +267,10 @@ def main():
     status = st.status(f"正在分析 {code}...", expanded=True)
 
     try:
+        # 实时行情（优先获取，与主分析并行）
+        status.write("获取实时行情...")
+        realtime = cached_realtime_quote(code)
+
         market = cached_market_state()
         status.write("正在分析（首次较慢，再次查询秒出）...")
 
@@ -287,6 +294,23 @@ def main():
         except Exception:
             deep_insights = {}
 
+        # 五维度深度研究 v2
+        @st.cache_data(ttl=3600, show_spinner=False)
+        def _cached_research_v2(code, fund_json, b1_json):
+            from deep_research_v2 import deep_research as dr_v2
+            fund = json.loads(fund_json) if fund_json else {}
+            b1 = json.loads(b1_json) if b1_json else {}
+            return dr_v2(code, fundamentals=fund, b1_result=b1)
+
+        try:
+            research_v2 = _cached_research_v2(
+                code,
+                fund_json=json.dumps(cached_fundamentals().get(code, {}), default=str),
+                b1_json=json.dumps(result, default=str),
+            )
+        except Exception:
+            research_v2 = None
+
         # 记录历史
         add_to_history(code, result["meta"]["name"])
 
@@ -295,7 +319,8 @@ def main():
             render_price_card, render_star_verdict, render_risk_warnings,
             render_scores, render_b1_conditions, render_indicators_table,
             render_price_levels, render_returns, render_fundamentals,
-            render_deep_insights_combined, render_kline_chart,
+            render_deep_insights_combined, render_deep_research_v2,
+            render_intraday_chart, render_kline_chart,
             render_peer_comparison, render_footer,
         )
 
@@ -308,7 +333,7 @@ def main():
             toggle_favorite(code, result["meta"]["name"])
             st.rerun()
 
-        render_price_card(result["meta"], result["price"], result["market"])
+        render_price_card(result["meta"], result["price"], result["market"], realtime=realtime)
         st.divider()
 
         # 星级判定
@@ -325,6 +350,10 @@ def main():
         # 深度分析
         st.subheader("深度分析")
         render_deep_insights_combined(result.get("deep", {}), deep_insights)
+
+        # 五维度结构化研究 v2
+        if research_v2:
+            render_deep_research_v2(research_v2)
 
         st.divider()
 
@@ -344,6 +373,9 @@ def main():
         render_returns(result["returns"])
 
         st.divider()
+
+        # 日内分时图
+        render_intraday_chart(code, result["meta"]["name"])
 
         # K线图
         chart_data = result.get("chart_data", [])
