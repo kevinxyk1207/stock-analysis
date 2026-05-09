@@ -146,16 +146,16 @@ class EnhancedStockFetcher:
         """检测可用的数据源"""
         sources = []
 
-        # 1. akshare（优先：云端无需登录，与东方财富同步）
+        # 1. baostock
+        if self._bs_logged_in:
+            sources.append('baostock')
+
+        # 2. akshare
         try:
             import akshare as ak
             sources.append('akshare')
         except ImportError:
             logger.debug("akshare未安装")
-
-        # 2. baostock（需要登录）
-        if self._bs_logged_in:
-            sources.append('baostock')
 
         # 3. tushare（需要token）
         try:
@@ -344,14 +344,14 @@ class EnhancedStockFetcher:
             logger.debug(f"使用缓存数据: {symbol} ({len(cached)}条)")
             return cached
 
-        # 缓存未命中，尝试数据源（akshare优先，云端无需登录）
+        # 缓存未命中，尝试数据源
         sources_to_try = []
-
-        if 'akshare' in self.available_sources:
-            sources_to_try.append(('akshare', self._try_akshare_daily))
 
         if 'baostock' in self.available_sources:
             sources_to_try.append(('baostock', self._try_baostock_daily))
+
+        if 'akshare' in self.available_sources:
+            sources_to_try.append(('akshare', self._try_akshare_daily))
 
         if 'tushare' in self.available_sources:
             sources_to_try.append(('tushare', self._try_tushare_daily))
