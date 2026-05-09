@@ -24,7 +24,15 @@ def fetch_q1_data():
     logger.info("拉取全市场Q1数据...")
     try:
         import akshare as ak
-        df = ak.stock_yjbb_em(date="20260331")
+        from datetime import datetime
+        m = datetime.now().month
+        y = datetime.now().year
+        q_end = ((m-1)//3)*3  # 最近完整季度末月
+        if q_end == 0:  # 1-3月 → 上一年Q3
+            q_end = 9; y -= 1
+        q_date = f"{y}{q_end:02d}31" if q_end in (3, 12) else f"{y}{q_end:02d}30"
+        logger.info(f"使用季报: {q_date}")
+        df = ak.stock_yjbb_em(date=q_date)
         if df is None or df.empty:
             logger.error("未获取到Q1数据")
             return None

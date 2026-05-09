@@ -118,12 +118,12 @@ def render_scores(scores: dict):
     """双档评分条"""
     c1, c2 = st.columns(2)
     with c1:
-        s10 = scores["score_10d"]
+        s10 = scores["score_short"]
         st.metric("10日短线得分", f"{s10:.0f}", delta=score_label(s10),
                   delta_color="normal" if s10 >= 60 else "off")
         st.progress(s10 / 100)
     with c2:
-        s60 = scores["score_60d"]
+        s60 = scores["score_long"]
         st.metric("60日长线得分", f"{s60:.0f}", delta=score_label(s60),
                   delta_color="normal" if s60 >= 60 else "off")
         st.progress(s60 / 100)
@@ -663,6 +663,44 @@ def render_intraday_chart(code: str, stock_name: str = ""):
     )
 
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+
+def render_signal_badge(signals: dict | None):
+    """买卖信号标签"""
+    if signals is None:
+        return
+
+    buy = signals.get("buy", [])
+    sell = signals.get("sell", [])
+
+    if signals.get("neutral", True):
+        return
+
+    if sell:
+        st.markdown("### 卖点信号")
+        for s in sell:
+            color = "#c62828" if s["strength"] == "strong" else "#ef5350"
+            bg = "#ffebee" if s["strength"] == "strong" else "#fff5f5"
+            st.markdown(f"""
+            <div style='background:{bg}; border-left:4px solid {color}; padding:8px 12px;
+                        border-radius:6px; margin:4px 0;'>
+                <span style='color:{color}; font-weight:bold; font-size:14px;'>{s['type']}</span>
+                <span style='color:#666; font-size:12px; margin-left:8px;'>{s['detail']}</span>
+            </div>
+            """, unsafe_allow_html=True)
+
+    if buy:
+        st.markdown("### 买点信号")
+        for s in buy:
+            color = "#2e7d32" if s["strength"] == "strong" else "#66bb6a"
+            bg = "#e8f5e9" if s["strength"] == "strong" else "#f1f8e9"
+            st.markdown(f"""
+            <div style='background:{bg}; border-left:4px solid {color}; padding:8px 12px;
+                        border-radius:6px; margin:4px 0;'>
+                <span style='color:{color}; font-weight:bold; font-size:14px;'>{s['type']}</span>
+                <span style='color:#666; font-size:12px; margin-left:8px;'>{s['detail']}</span>
+            </div>
+            """, unsafe_allow_html=True)
 
 
 def _safe_float(val) -> float | None:

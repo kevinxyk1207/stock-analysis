@@ -21,7 +21,7 @@ def get_realtime_quote(code: str):
         resp = requests.get(_EM_SPOT_URL, params={
             "secid": _make_secid(code),
             "fields": _EM_FIELDS,
-        }, timeout=5)
+        }, timeout=5, proxies={"http": None, "https": None})
         data = resp.json()
         d = data.get("data", {})
         if not d:

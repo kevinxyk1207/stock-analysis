@@ -7,6 +7,7 @@ import sys
 import os
 import json
 import traceback
+from datetime import datetime, timedelta
 
 # ── 页面配置（必须第一个 st 调用） ──
 st.set_page_config(
@@ -75,8 +76,12 @@ def cached_fundamentals():
 @st.cache_data(ttl=86400, show_spinner=False)
 def cached_deep_research(code: str):
     """深度洞察：已有返回缓存，无则自动挖掘研报+主营+财务"""
-    from deep_research import get_or_research
-    return get_or_research(code)
+    from deep_research_v2 import deep_research as _deep_v2
+    from stock_analyzer import fetch_fundamentals_all
+    all_fund = fetch_fundamentals_all()
+    fund = all_fund.get(code, {})
+    result = _deep_v2(code, fundamentals=fund)
+    return result
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -106,6 +111,113 @@ def cached_analyze(code: str, _market: str, _fund_key: str, _insight_key: str):
 
 
 # ═══════════════════════════════════════════
+# 首页
+# ═══════════════════════════════════════════
+
+def render_home_page():
+    # ── 指数卡片 ──
+    indices = _cached_market_index()
+    if indices:
+        cols = st.columns(len(indices))
+        for i, idx in enumerate(indices):
+            color = "#e53935" if idx["pct"] >= 0 else "#26a69a"
+            with cols[i]:
+                st.markdown(f"""
+                <div style='text-align:center;padding:10px;border-radius:8px;background:#fafafa'>
+                    <div style='font-size:11px;color:#666'>{idx['name']}</div>
+                    <div style='font-size:20px;font-weight:bold;color:{color}'>{idx['price']:.0f}</div>
+                    <div style='font-size:14px;color:{color}'>{idx['pct']:+.2f}%</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+    st.divider()
+
+    # ── 候选池概览 ──
+    try:
+        scan = _cached_scanner()
+        if "error" not in scan and scan.get("candidates"):
+            pool = scan["candidates"]
+            st.subheader(f"全市场候选池: {len(pool)} 只 Q1 暴增股")
+            st.caption(f"数据日期: {scan.get('date', '?')} | 下一批更新: 每日 15:30")
+    except Exception:
+        pass
+
+    # ── 自选股监控 ──
+    favs = st.session_state.get("favorites", [])
+    if favs:
+        st.subheader(f"自选股 ({len(favs)})")
+        fav_codes = [c for c, _ in favs]
+
+        # 获取实时行情
+        rt_data = {}
+        for code in fav_codes[:10]:
+            try:
+                q = cached_realtime_quote(code)
+                if q:
+                    rt_data[code] = q
+            except Exception:
+                pass
+
+        # 检测信号
+        from combined_backtest import detect_current_signals
+        from enhanced_fetcher import EnhancedStockFetcher
+        fetcher = EnhancedStockFetcher()
+        signal_count = 0
+
+        for code, name in favs[:10]:
+            rt = rt_data.get(code, {})
+            pct_val = rt.get("change_pct", 0) or 0
+            price_val = rt.get("price", 0) or 0
+            color = "#e53935" if pct_val >= 0 else "#26a69a"
+
+            # 信号检测
+            try:
+                end = datetime.now().strftime("%Y%m%d")
+                start = (datetime.now() - timedelta(days=730)).strftime("%Y%m%d")
+                df = fetcher._get_cached_data(code, start, end)
+                sig = detect_current_signals(code, df) if df is not None and len(df) > 0 else {"buy": [], "sell": [], "neutral": True}
+            except Exception:
+                sig = {"buy": [], "sell": [], "neutral": True}
+
+            has_buy = len(sig.get("buy", [])) > 0
+            has_sell = len(sig.get("sell", [])) > 0
+            if has_buy:
+                signal_count += 1
+
+            buy_tag = " [买点]" if has_buy else ""
+            sell_tag = " [卖点]" if has_sell else ""
+
+            c1, c2 = st.columns([3, 1])
+            with c1:
+                st.markdown(f"""
+                <div style='padding:6px 0;'>
+                    <span style='font-weight:bold;'>{code} {name}</span>
+                    <span style='color:{color};margin-left:8px;'>{price_val:.2f} ({pct_val:+.2f}%)</span>
+                    <span style='color:#2e7d32;font-weight:bold;margin-left:4px;'>{buy_tag}</span>
+                    <span style='color:#c62828;font-weight:bold;'>{sell_tag}</span>
+                </div>
+                """, unsafe_allow_html=True)
+            with c2:
+                if st.button("分析", key=f"home_{code}", use_container_width=True):
+                    st.session_state.analyze_code = code
+                    st.rerun()
+
+        if signal_count > 0:
+            st.success(f"{signal_count} 只自选股触发买入信号")
+    else:
+        st.info("暂无自选股。在搜索页收藏你关注的股票。")
+
+    # ── 最近分析记录 ──
+    history = st.session_state.get("history", [])
+    if history:
+        with st.expander("最近查询", expanded=False):
+            for code, name in history[:5]:
+                if st.button(f"{code} {name}", key=f"home_hist_{code}"):
+                    st.session_state.analyze_code = code
+                    st.rerun()
+
+
+# ═══════════════════════════════════════════
 # 全市场发现页
 # ═══════════════════════════════════════════
 
@@ -117,7 +229,8 @@ def _cached_market_index():
     params = {"fltt": 2, "secids": "1.000001,0.399001,0.399006,1.000688",
               "fields": "f2,f3,f6,f14"}
     try:
-        resp = requests.get(url, params=params, timeout=5)
+        resp = requests.get(url, params=params, timeout=5,
+                           proxies={"http": None, "https": None})
         items = resp.json().get("data", {}).get("diff", [])
         return [{"name": i["f14"], "price": i["f2"], "pct": i["f3"]/100, "vol": i["f6"]} for i in items]
     except Exception:
@@ -195,18 +308,17 @@ def render_discovery_page():
     if "信号分" in df_show.columns:
         df_show["信号分"] = df_show["信号分"].astype(int)
 
-    st.dataframe(
-        df_show,
-        use_container_width=True,
-        hide_index=True,
-        height=800,
-        column_config={
-            "代码": st.column_config.TextColumn(width="small"),
-            "名称": st.column_config.TextColumn(width="small"),
-        },
-    )
+    # 代码按钮（点击跳转到个股分析）
+    st.caption("点击股票名称 → 跳转到个股深度分析")
+    cols_btn = st.columns(5)
+    for i, c in enumerate(pool[:30]):
+        with cols_btn[i % 5]:
+            label = f"{c['代码']} {c.get('名称', '?')}"
+            if st.button(label, key=f"disc_{c['代码']}", use_container_width=True, help=f"利润增速{c.get('利润增速%','?')}%"):
+                st.session_state.analyze_code = c['代码']
+                st.rerun()
 
-    st.caption(f"候选池已缓存 1 小时，{len(pool)} 只股票 | 下一步：点击代码复制，到搜索页查看深度分析")
+    st.caption(f"候选池 {len(pool)} 只 | 数据日期: {data.get('date', '?')} | 缓存 1 小时")
 
 
 # ═══════════════════════════════════════════
@@ -373,7 +485,11 @@ def main():
     init_session()
 
     st.title("B1 选股平台")
-    page = st.radio("", ["搜索个股", "全市场发现"], horizontal=True, label_visibility="collapsed")
+    page = st.radio("", ["首页", "搜索个股", "全市场发现"], horizontal=True, label_visibility="collapsed")
+
+    if page == "首页":
+        render_home_page()
+        return
 
     if page == "全市场发现":
         render_discovery_page()
@@ -457,6 +573,7 @@ def main():
             render_deep_insights_combined, render_deep_research_v2,
             render_intraday_chart, render_kline_chart,
             render_peer_comparison, render_footer,
+            render_signal_badge,
         )
 
         st.divider()
@@ -473,6 +590,19 @@ def main():
 
         # 星级判定
         render_star_verdict(result["star"], result["operation"])
+
+        # 买卖信号标注
+        try:
+            from combined_backtest import detect_current_signals
+            end_dt = datetime.now().strftime("%Y%m%d")
+            start_dt = (datetime.now() - timedelta(days=730)).strftime("%Y%m%d")
+            from enhanced_fetcher import EnhancedStockFetcher
+            _fetcher = EnhancedStockFetcher()
+            _df = _fetcher._get_cached_data(code, start_dt, end_dt)
+            sigs = detect_current_signals(code, _df) if _df is not None and len(_df) > 0 else None
+            render_signal_badge(sigs)
+        except Exception:
+            pass
 
         # 风险警告
         render_risk_warnings(result["risks"], ret60=result["returns"].get("60d"))
