@@ -31,28 +31,36 @@ sys.path.insert(0, _LOCAL_PATH)
 # 缓存数据层
 # ═══════════════════════════════════════════
 
-@st.cache_data(ttl=86400, show_spinner="正在加载股票列表...")
+@st.cache_data(ttl=3600, show_spinner=False)
 def build_search_index():
-    """构建全 A 股搜索索引（从本地文件，秒出）"""
+    """构建全 A 股搜索索引"""
     import json
     from collections import defaultdict
 
-    # 从本地 JSON 加载（不依赖网络）
+    name_map = {}
     json_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "stock_names.json")
     try:
         with open(json_path, encoding="utf-8") as f:
             name_map = json.load(f)
     except Exception:
+        pass
+
+    # 降级：用 enhanced_fetcher 的 load_stock_name_map
+    if not name_map:
+        try:
+            from enhanced_fetcher import load_stock_name_map
+            name_map = load_stock_name_map()
+        except Exception:
+            pass
+
+    if not name_map:
         return {}
 
     index = defaultdict(list)
     for code, name in name_map.items():
         entry = (code, name)
-        # 代码匹配
         index[code].append(entry)
-        # 名称全匹配
         index[name].append(entry)
-        # 名称单字拆解（搜"茅"→ 找到茅台）
         for char in name:
             if char.strip():
                 index[char].append(entry)
