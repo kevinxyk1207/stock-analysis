@@ -63,6 +63,45 @@ def _d(d, key):
         return None
 
 
+def get_daily_kline(code: str, days: int = 500):
+    """从东方财富直接获取日线K线（不依赖baostock/akshare）"""
+    secid = _make_secid(code)
+    end = datetime.now().strftime("%Y%m%d")
+    beg = (datetime.now() - pd.Timedelta(days=days+30)).strftime("%Y%m%d")
+    try:
+        resp = requests.get(
+            "https://push2his.eastmoney.com/api/qt/stock/kline/get",
+            params={
+                "secid": secid, "klt": 101, "fqt": 1,
+                "beg": beg, "end": end,
+                "fields1": "f1,f2,f3,f4,f5,f6",
+                "fields2": "f51,f52,f53,f54,f55,f56,f57",
+            },
+            timeout=10, proxies={"http": None, "https": None},
+        )
+        data = resp.json().get("data", {})
+        if not data or "klines" not in data:
+            return pd.DataFrame()
+        rows = []
+        for line in data["klines"]:
+            parts = line.split(",")
+            if len(parts) >= 7:
+                rows.append({
+                    "date": parts[0],
+                    "open": float(parts[1]),
+                    "close": float(parts[2]),
+                    "high": float(parts[3]),
+                    "low": float(parts[4]),
+                    "volume": float(parts[5]),
+                    "amount": float(parts[6]),
+                })
+        df = pd.DataFrame(rows)
+        df["date"] = pd.to_datetime(df["date"])
+        return df.set_index("date").sort_index()
+    except Exception:
+        return pd.DataFrame()
+
+
 def get_intraday_chart(code: str, period: str = "1"):
     """Get today's intraday minute candles as list of dicts."""
     try:

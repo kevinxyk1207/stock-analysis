@@ -344,8 +344,9 @@ class EnhancedStockFetcher:
             logger.debug(f"使用缓存数据: {symbol} ({len(cached)}条)")
             return cached
 
-        # 缓存未命中，尝试数据源
+        # 缓存未命中，尝试数据源（东方财富直接API优先，最快最稳定）
         sources_to_try = []
+        sources_to_try.append(('em_kline', self._try_em_kline_daily))
 
         if 'baostock' in self.available_sources:
             sources_to_try.append(('baostock', self._try_baostock_daily))
@@ -370,6 +371,16 @@ class EnhancedStockFetcher:
         # 所有数据源都失败，生成模拟数据
         logger.warning(f"所有数据源均失败，为股票{symbol}生成模拟数据")
         return self._generate_mock_data(symbol, start_date, end_date)
+
+    def _try_em_kline_daily(self, symbol: str, start_date: str,
+                             end_date: str, adjust: str) -> pd.DataFrame:
+        """使用东方财富 K 线 API 直接获取日线（最快、不需要登录）"""
+        try:
+            from real_time import get_daily_kline
+            days = (pd.to_datetime(end_date) - pd.to_datetime(start_date)).days + 30
+            return get_daily_kline(symbol, days=days)
+        except Exception:
+            return pd.DataFrame()
 
     def _try_baostock_daily(self, symbol: str, start_date: str,
                             end_date: str, adjust: str) -> pd.DataFrame:
