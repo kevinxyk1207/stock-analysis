@@ -6,7 +6,6 @@ streamlit>=1.30.0
 plotly>=5.18.0
 requests>=2.31.0
 matplotlib>=3.7.0
-ta-lib>=0.4.28
-numba>=0.64.0
+# ta-lib>=0.4.28  # 需要C库，云端可能不可用
+# numba>=0.64.0  # 云端可能不可用
 # tushare>=1.2.89  # 备选数据源，如需切换取消注释
-# redeploy trigger
