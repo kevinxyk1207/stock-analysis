@@ -665,7 +665,7 @@ def render_intraday_chart(code: str, stock_name: str = ""):
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 
-def render_signal_badge(signals: dict | None):
+def render_signal_badge(signals):
     """买卖信号标签"""
     if signals is None:
         return
