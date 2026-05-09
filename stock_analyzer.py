@@ -88,8 +88,8 @@ class SingleStockAnalyzer:
             return {"error": "指标计算结果为空"}
 
         # 4. 评分
-        score_10d = round(self.selector._calculate_score(cond, "10d"), 1)
-        score_60d = round(self.selector._calculate_score_60d(cond), 1)
+        score_short = round(self.selector._calculate_score(cond, "short"), 1)
+        score_long = round(self.selector._calculate_score_long(cond), 1)
 
         # 5. 基础价格信息
         close = float(prepared["close"].iloc[-1])
@@ -132,7 +132,7 @@ class SingleStockAnalyzer:
         at_high = close >= high_60 * 0.98
 
         # 10. 星级评定
-        star_result = compute_star_rating(cond, score_60d, fundamentals, deep_insights)
+        star_result = compute_star_rating(cond, score_long, fundamentals, deep_insights)
 
         # 11. 操作建议
         is_bull = market_state.get("is_bull", True)
@@ -180,8 +180,8 @@ class SingleStockAnalyzer:
             "star": star_result,
             "operation": operation,
             "scores": {
-                "score_10d": score_10d,
-                "score_60d": score_60d,
+                "score_short": score_short,
+                "score_long": score_long,
             },
             "b1_conditions": {
                 "kdj_low": cond.get("kdj_low", False),
@@ -361,7 +361,7 @@ def load_deep_insights() -> dict:
 
 # ── 星级评定 ──
 
-def compute_star_rating(cond: dict, score_60d: float,
+def compute_star_rating(cond: dict, score_long: float,
                          fundamentals: dict, deep_insights: dict) -> dict:
     """
     完全复用 daily_report.py:analyze_stock 的星级算法
@@ -397,12 +397,12 @@ def compute_star_rating(cond: dict, score_60d: float,
 
     star_score = 0
 
-    # 1) 60d 技术得分 (0-30)
-    if score_60d >= 90: star_score += 30
-    elif score_60d >= 85: star_score += 25
-    elif score_60d >= 80: star_score += 20
-    elif score_60d >= 75: star_score += 15
-    elif score_60d >= 70: star_score += 10
+    # 1) 长线技术得分 (0-30)
+    if score_long >= 90: star_score += 30
+    elif score_long >= 85: star_score += 25
+    elif score_long >= 80: star_score += 20
+    elif score_long >= 75: star_score += 15
+    elif score_long >= 70: star_score += 10
     else: star_score += 5
 
     # 2) 风险扣分

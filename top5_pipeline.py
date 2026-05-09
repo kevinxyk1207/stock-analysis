@@ -15,7 +15,7 @@ from deep_research_v2 import deep_research
 from auto_scanner import run_scan
 
 
-def combined_score(b1_60d: float, dr_overall: str, industry_pct: float,
+def combined_score(b1_long: float, dr_overall: str, industry_pct: float,
                    profit_yoy: float, margin: float, revenue_yoy: float,
                    analyst_cv: float | None) -> float:
     """
@@ -26,7 +26,7 @@ def combined_score(b1_60d: float, dr_overall: str, industry_pct: float,
     score = 0.0
 
     # B1 60d 评分 → 权重 15%（仅在HS300内验证过夏普0.98，中小盘参考价值有限）
-    score += b1_60d * 0.15
+    score += b1_long * 0.15
 
     # 深度研究 → 权重 40%（五维度基于全市场数据，不依赖HS300范围）
     dr_map = {"green": 85, "yellow": 50, "red": 15}
@@ -113,7 +113,7 @@ def main():
                     break
 
             score = combined_score(
-                b1_60d=b1["scores"]["score_60d"],
+                b1_long=b1["scores"]["score_long"],
                 dr_overall=dr["overall_level"],
                 industry_pct=ind_pct,
                 profit_yoy=_fv(fund.get("profit_growth")),
@@ -126,8 +126,8 @@ def main():
                 "code": code,
                 "name": b1["meta"]["name"],
                 "score": score,
-                "b1_60d": b1["scores"]["score_60d"],
-                "b1_10d": b1["scores"]["score_10d"],
+                "b1_long": b1["scores"]["score_long"],
+                "b1_short": b1["scores"]["score_short"],
                 "stars": b1["star"]["stars"],
                 "dr_overall": dr["overall_level"],
                 "profit_yoy": _fv(fund.get("profit_growth")),
@@ -157,7 +157,7 @@ def main():
     for i, (_, r) in enumerate(df.head(5).iterrows()):
         print(f"\n  #{i+1}  {r['code']} {r['name']}  — 综合得分 {r['score']:.0f}")
         print(f"  {'─'*50}")
-        print(f"  B1: 60d={r['b1_60d']:.0f}, 10d={r['b1_10d']:.0f}, 星级={'★'*r['stars']}")
+        print(f"  B1: 60d={r['b1_long']:.0f}, 10d={r['b1_short']:.0f}, 星级={'★'*r['stars']}")
         print(f"  深度: {r['dr_overall']}")
         print(f"  利润+{r['profit_yoy']:.0f}% | 营收+{r['revenue_yoy']:.0f}% | 毛利率{r['margin']:.1f}% | ROE{r['roe']:.1f}%")
         print(f"  行业排位: top{r['industry_pct']:.0f}% | 分析师CV: {r['analyst_cv'] or 'N/A'}")
@@ -168,13 +168,13 @@ def main():
     print(f"  {'排名':<4} {'代码':<8} {'名称':<8} {'综合':>5} {'B1':>5} {'深度':>6} {'利润%':>8} {'毛利率':>6} {'行业%':>6} {'CV':>6}")
     print(f"  {'-'*70}")
     for i, (_, r) in enumerate(df.head(20).iterrows()):
-        print(f"  {i+1:<4} {r['code']:<8} {r['name']:<8} {r['score']:>5.0f} {r['b1_60d']:>5.0f} {r['dr_overall']:>6} {r['profit_yoy']:>+7.0f}% {r['margin']:>5.1f}% {r['industry_pct']:>5.0f}% {r['analyst_cv'] or '—':>6}")
+        print(f"  {i+1:<4} {r['code']:<8} {r['name']:<8} {r['score']:>5.0f} {r['b1_long']:>5.0f} {r['dr_overall']:>6} {r['profit_yoy']:>+7.0f}% {r['margin']:>5.1f}% {r['industry_pct']:>5.0f}% {r['analyst_cv'] or '—':>6}")
 
     # ── 保存 ──
     output = {
         "date": datetime.now().strftime("%Y-%m-%d"),
-        "top5": df.head(5)[["code", "name", "score", "b1_60d", "dr_overall", "profit_yoy", "margin"]].to_dict("records"),
-        "top20": df.head(20)[["code", "name", "score", "b1_60d", "dr_overall"]].to_dict("records"),
+        "top5": df.head(5)[["code", "name", "score", "b1_long", "dr_overall", "profit_yoy", "margin"]].to_dict("records"),
+        "top20": df.head(20)[["code", "name", "score", "b1_long", "dr_overall"]].to_dict("records"),
     }
     out_path = os.path.join("data_cache", "top5_picks.json")
     with open(out_path, "w", encoding="utf-8") as f:

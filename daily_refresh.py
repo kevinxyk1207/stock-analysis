@@ -67,7 +67,7 @@ def main():
                 except: return 0
 
             score = combined_score(
-                b1_60d=b1["scores"]["score_60d"],
+                b1_long=b1["scores"]["score_long"],
                 dr_overall=dr["overall_level"],
                 industry_pct=ind_pct,
                 profit_yoy=_fv(fund.get("profit_growth")),
@@ -77,7 +77,7 @@ def main():
             )
             results.append({
                 "code": code, "name": b1["meta"]["name"],
-                "score": score, "b1_60d": b1["scores"]["score_60d"],
+                "score": score, "b1_long": b1["scores"]["score_long"],
                 "dr_overall": dr["overall_level"],
             })
         except Exception:
@@ -87,7 +87,7 @@ def main():
 
     df = pd.DataFrame(results).sort_values("score", ascending=False)
     top5_path = os.path.join(CACHE_DIR, "top5_picks.json")
-    top5 = df.head(5)[["code", "name", "score", "b1_60d", "dr_overall"]].to_dict("records")
+    top5 = df.head(5)[["code", "name", "score", "b1_long", "dr_overall"]].to_dict("records")
     with open(top5_path, "w", encoding="utf-8") as f:
         json.dump({"date": scan["date"], "top5": top5, "total": len(results)}, f, ensure_ascii=False, indent=2)
     logger.info(f"  Top5: {[(t['code'], t['name']) for t in top5]}")

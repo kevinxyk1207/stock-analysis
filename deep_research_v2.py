@@ -140,8 +140,8 @@ def fundamental_technical_divergence(code: str, fundamentals: dict,
     profit_yoy = _fv(fundamentals.get("profit_growth"))
     revenue_yoy = _fv(fundamentals.get("revenue_growth"))
     margin = _fv(fundamentals.get("gross_margin"))
-    score_60d = _fv(b1_scores.get("score_60d"))
-    score_10d = _fv(b1_scores.get("score_10d"))
+    score_60d = _fv(b1_scores.get("score_long"))
+    score_short = _fv(b1_scores.get("score_short"))
     ret_60d = _fv(returns.get("60d"))
 
     fund_strong = profit_yoy > 200 or (margin > 30 and profit_yoy > 100)
@@ -152,7 +152,7 @@ def fundamental_technical_divergence(code: str, fundamentals: dict,
 
     data = {
         "profit_yoy": profit_yoy, "margin": margin,
-        "score_60d": score_60d, "ret_60d": ret_60d,
+        "score_long": score_60d, "ret_60d": ret_60d,
     }
 
     # 背离检测
@@ -266,7 +266,14 @@ def _load_industry_data() -> pd.DataFrame:
         return _industry_data
     try:
         import akshare as ak
-        df = ak.stock_yjbb_em(date="20260331")
+        from datetime import datetime
+        m = datetime.now().month
+        y = datetime.now().year
+        q_end = ((m-1)//3)*3
+        if q_end == 0:
+            q_end = 12; y -= 1
+        q_date = f"{y}{q_end:02d}31" if q_end in (3, 12) else f"{y}{q_end:02d}30"
+        df = ak.stock_yjbb_em(date=q_date)
         if df is None or df.empty:
             return pd.DataFrame()
         col_map = {
@@ -401,8 +408,8 @@ def risk_scan(code: str, fundamentals: dict, price_data: dict,
     profit_yoy = _fv(fundamentals.get("profit_growth"))
     revenue_yoy = _fv(fundamentals.get("revenue_growth"))
     margin = _fv(fundamentals.get("gross_margin"))
-    score_60d = _fv(b1_scores.get("score_60d"))
-    score_10d = _fv(b1_scores.get("score_10d"))
+    score_60d = _fv(b1_scores.get("score_long"))
+    score_short = _fv(b1_scores.get("score_short"))
 
     # 1. 利润质量风险
     if profit_yoy > 200 and revenue_yoy < 10:
