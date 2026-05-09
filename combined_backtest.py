@@ -5,11 +5,7 @@
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pandas as pd, numpy as np
-from enhanced_fetcher import load_cache_data
 from datetime import datetime
-
-data = load_cache_data(min_rows=500, common_range=False)
-print(f"加载 {len(data)} 只股票")
 
 
 def detect_lurking_signal(df_daily, idx):
@@ -232,6 +228,8 @@ def detect_current_signals(code: str, df) -> dict:
 
 
 def main():
+    from enhanced_fetcher import load_cache_data
+    data = load_cache_data(min_rows=500, common_range=False)
     eligible = [(k, len(v)) for k, v in data.items() if len(v) >= 1000]
     eligible.sort(key=lambda x: x[1], reverse=True)
     stocks = {k: data[k] for k, _ in eligible[:100]}
