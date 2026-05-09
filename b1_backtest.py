@@ -245,7 +245,7 @@ class B1Backtest:
                 and conditions.get("vol_check", True)
             )
 
-            score = self.selector._calculate_score(conditions, '10d')
+            score = self.selector._calculate_score(conditions, 'short')
 
             forward_returns = {}
             for hp in self.config.holding_periods:
@@ -584,7 +584,7 @@ class CrossSectionalBacktest:
     }
 
     # mapping: horizon名 → batch_rank_score 的 time_horizon 参数
-    HORIZON_TO_TIME = {'short': '10d', 'long': '60d'}
+    HORIZON_TO_TIME = {'short': 'short', 'long': 'long'}
 
     def __init__(self, selector, bt_config=None):
         self.selector = selector
@@ -676,12 +676,12 @@ class CrossSectionalBacktest:
                 if horizon == 'long':
                     base_scores = {}
                     for sym, cond in all_conditions.items():
-                        base_scores[sym] = self.selector._calculate_score_60d(cond)
+                        base_scores[sym] = self.selector._calculate_score_long(cond)
                     # 百分位化
                     base_series = pd.Series(base_scores)
                     base_scores = (base_series.rank(pct=True) * 100).to_dict()
                 else:
-                    time_h = self.HORIZON_TO_TIME.get(horizon, '10d')
+                    time_h = self.HORIZON_TO_TIME.get(horizon, 'short')
                     base_scores = self.selector.batch_rank_score(all_conditions, time_h)
                 soft_scores = {}
                 if horizon == 'long':
@@ -737,9 +737,9 @@ class CrossSectionalBacktest:
                             horizon_scores = self.selector.compute_horizon_scores(conditions)
                             score = horizon_scores.get(horizon, 0.0)
                         elif scoring_mode == 'legacy' and horizon == 'long':
-                            score = self.selector._calculate_score_60d(conditions)
+                            score = self.selector._calculate_score_long(conditions)
                         else:
-                            score = self.selector._calculate_score(conditions, '10d')
+                            score = self.selector._calculate_score(conditions, 'short')
                         stock_scores.append((sym, score, pdf, eval_idx))
                     except Exception:
                         continue
@@ -1036,15 +1036,15 @@ def _top_n_hold_eval_date(
                 score = hs.get(horizon, 0.0)
                 stock_scores.append((sym, score, pdf, eval_idx))
             elif scoring_mode == 'legacy' and horizon == 'long':
-                score = selector._calculate_score_60d(conditions)
+                score = selector._calculate_score_long(conditions)
                 stock_scores.append((sym, score, pdf, eval_idx))
             elif scoring_mode == 'resonance':
                 # 双分计算，后续统一排名取百分位
-                s10 = selector._calculate_score(conditions, '10d')
-                s60 = selector._calculate_score_60d(conditions)
+                s10 = selector._calculate_score(conditions, 'short')
+                s60 = selector._calculate_score_long(conditions)
                 stock_scores.append((sym, s10, s60, pdf, eval_idx))
             else:
-                score = selector._calculate_score(conditions, '10d')
+                score = selector._calculate_score(conditions, 'short')
                 stock_scores.append((sym, score, pdf, eval_idx))
         except Exception:
             continue
@@ -1052,13 +1052,13 @@ def _top_n_hold_eval_date(
     if len(stock_scores) < top_n:
         return None
 
-    # 共振模式：10d和60d百分位平均
+    # 共振模式：short和long百分位平均
     if scoring_mode == 'resonance':
         scores_10d = np.array([s[1] for s in stock_scores])
-        scores_60d = np.array([s[2] for s in stock_scores])
+        scores_long = np.array([s[2] for s in stock_scores])
         pct_10d = pd.Series(scores_10d).rank(pct=True) * 100
-        pct_60d = pd.Series(scores_60d).rank(pct=True) * 100
-        resonance = ((pct_10d + pct_60d) / 2).values
+        pct_long = pd.Series(scores_long).rank(pct=True) * 100
+        resonance = ((pct_10d + pct_long) / 2).values
         for i, s in enumerate(stock_scores):
             sym, _, _, pdf, idx = s
             stock_scores[i] = (sym, resonance[i], pdf, idx)
@@ -1068,7 +1068,7 @@ def _top_n_hold_eval_date(
         all_cond = {}
         for sym, _, pdf, idx in stock_scores:
             all_cond[sym] = selector.check_b1_conditions(pdf, date_idx=idx)
-        time_h = CrossSectionalBacktest.HORIZON_TO_TIME.get(horizon, '10d')
+        time_h = CrossSectionalBacktest.HORIZON_TO_TIME.get(horizon, 'short')
         base_scores = selector.batch_rank_score(all_cond, time_h)
         rescored = []
         for sym, _, pdf, idx in stock_scores:

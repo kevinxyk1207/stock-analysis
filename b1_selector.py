@@ -51,32 +51,32 @@ class B1Config:
 # 按持有期的评分权重（优化自网格搜索 + 权重扫描回测验证）
 # 格式: {zxdkx, zxdq, vol, macd, rsi, vol_surge, ma_alignment, trend_strength, pullback_setup}
 # v5: 新增 pullback_setup（回调买点信号）
-# v4权重（无pullback_setup）
+# v4权重（无pullback_setup）- 历史存档，仅供参考
 TIME_HORIZON_WEIGHTS_V4 = {
-    '10d': {'zxdkx': 0,  'zxdq': 28, 'vol': 14, 'macd': 14, 'rsi': 14,
+    'short': {'zxdkx': 0,  'zxdq': 28, 'vol': 14, 'macd': 14, 'rsi': 14,
             'vol_surge': 0, 'ma_alignment': 22, 'trend_strength': 8, 'pullback_setup': 0},
-    '60d': {'zxdkx': 28, 'zxdq': 28, 'vol': 7,  'macd': 0,  'rsi': 7,
+    'long': {'zxdkx': 28, 'zxdq': 28, 'vol': 7,  'macd': 0,  'rsi': 7,
             'vol_surge': 15, 'ma_alignment': 0, 'trend_strength': 15, 'pullback_setup': 0},
 }
 
-# v5权重（含pullback_setup）- 原始版本
+# v5权重（含pullback_setup）- 历史存档，仅供参考
 TIME_HORIZON_WEIGHTS_V5_ORIGINAL = {
-    '10d': {'zxdkx': 0,  'zxdq': 28, 'vol': 14, 'macd': 14, 'rsi': 14,
+    'short': {'zxdkx': 0,  'zxdq': 28, 'vol': 14, 'macd': 14, 'rsi': 14,
             'vol_surge': 0, 'ma_alignment': 19, 'trend_strength': 6,
             'pullback_setup': 5},
-    '60d': {'zxdkx': 28, 'zxdq': 28, 'vol': 7,  'macd': 0,  'rsi': 7,
+    'long': {'zxdkx': 28, 'zxdq': 28, 'vol': 7,  'macd': 0,  'rsi': 7,
             'vol_surge': 15, 'ma_alignment': 0, 'trend_strength': 0,
             'pullback_setup': 15},
 }
 
-# v9权重（10d用legacy因子, 60d独立由HorizonSignalEngine评分）
+# v9权重（短线用legacy因子, 长线独立由HorizonSignalEngine评分）
 TIME_HORIZON_WEIGHTS = {
-    '10d': {'zxdkx': 0,  'zxdq': 28, 'vol': 14, 'macd': 14, 'rsi': 14,
+    'short': {'zxdkx': 0,  'zxdq': 28, 'vol': 14, 'macd': 14, 'rsi': 14,
             'vol_surge': 0, 'ma_alignment': 22, 'trend_strength': 8},
-    # 60d不再使用legacy权重——由 HorizonSignalEngine.score_one(conditions, 'long') 评分
+    # 长线不再使用legacy权重——由 HorizonSignalEngine.score_one(conditions, 'long') 评分
 }
 
-HORIZON_LABELS = {'10d': '短线', '60d': '长线'}
+HORIZON_LABELS = {'short': '短线', 'long': '长线'}
 
 
 class B1Selector:
@@ -477,7 +477,7 @@ class B1Selector:
 
         # 三档差异化信号原始值
         for key in ['volume_surge', 'price_accel_5', 'range_expand_5',
-                     'rel_strength_20', 'kdj_rebound',
+                     'rel_strength_20', 'kdj_rebound', 'reversal_potential',
                      'ma_alignment', 'trend_strength', 'macd_quality',
                      'rsi_trending_zone', 'vol_trend_ratio',
                      'ma60_slope_20d', 'drawdown_ratio',
@@ -618,25 +618,26 @@ class B1Selector:
         return scores
 
     def _calculate_score(self, conditions: Dict[str, any],
-                         time_horizon: str = '10d') -> float:
+                         time_horizon: str = 'short') -> float:
         """
-        计算10d短线得分（legacy因子加权，验证夏普0.95）
+        计算短线得分（legacy因子加权，验证夏普0.95，20d持仓）
 
         Args:
             conditions: 条件字典
-            time_horizon: 保留参数，仅支持'10d'
+            time_horizon: 保留参数，仅支持'short'
         """
-        weights = TIME_HORIZON_WEIGHTS['10d']
+        weights = TIME_HORIZON_WEIGHTS['short']
         comp = self._get_raw_component_scores(conditions)
         total_w = sum(weights.values())
 
         score = sum(comp[k] * w for k, w in weights.items()) / total_w
         return min(score, 100.0)
 
-    def _calculate_score_60d(self, conditions: Dict[str, any]) -> float:
+    def _calculate_score_long(self, conditions: Dict[str, any]) -> float:
         """
-        计算60d长线得分——使用 HorizonSignalEngine 的 long 信号池
+        计算长线得分——使用 HorizonSignalEngine 的 long 信号池
         （ma60_slope / weekly_bull_strength / drawdown_ratio / low_volatility / price_vs_ma120）
+        持仓期统一20个交易日
         """
         return self.signal_engine.score_one(conditions, 'long')
 
@@ -650,7 +651,7 @@ class B1Selector:
         return self.signal_engine.score_all(conditions)
 
     def batch_rank_score(self, all_conditions: Dict[str, Dict],
-                          time_horizon: str = '10d') -> Dict[str, float]:
+                          time_horizon: str = 'short') -> Dict[str, float]:
         """
         横截面排名评分（自适应归一化）
 
@@ -659,7 +660,7 @@ class B1Selector:
 
         Args:
             all_conditions: {symbol: conditions_dict} 全市场条件字典
-            time_horizon: '10d' 或 '60d'
+            time_horizon: 'short' 或 'long'
 
         Returns:
             {symbol: score_0_100}
@@ -667,7 +668,7 @@ class B1Selector:
         if not all_conditions:
             return {}
 
-        weights = TIME_HORIZON_WEIGHTS.get(time_horizon, TIME_HORIZON_WEIGHTS['10d'])
+        weights = TIME_HORIZON_WEIGHTS.get(time_horizon, TIME_HORIZON_WEIGHTS['short'])
         # 信号键映射: 权重名 → conditions 中的键
         signal_map = {
             'zxdkx': 'zxdkx_ratio',

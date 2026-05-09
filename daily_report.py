@@ -1,6 +1,6 @@
 """
 综合日报生成器 — Excel多sheet格式
-Sheet: 市场概览 | 纸上持仓 | 60d Top10汇总 | 技术信号详情 | 关键价位 | 操作建议
+Sheet: 市场概览 | 纸上持仓 | 长线Top10 | 10d短线 | 技术信号 | 关键价位 | 洞察 | 建议 | 早期关注 | 精筛池
 """
 import sys, os, json
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -69,8 +69,8 @@ def analyze_stock(sym, df, selector, fin_data=None, deep_insights=None):
         prepared = selector.prepare_data(df)
         cond = selector.check_b1_conditions(prepared, date_idx=-1)
         close = float(prepared["close"].iloc[-1])
-        s10 = selector._calculate_score(cond, "10d")
-        s60 = selector._calculate_score_60d(cond)
+        s10 = selector._calculate_score(cond, "short")
+        s60 = selector._calculate_score_long(cond)
         rsi = round(cond.get("rsi", 50), 1)
         j_val = round(cond.get("j_value", 50), 1)
         zr = round(cond.get("zxdkx_ratio", 1.0), 3)
@@ -186,7 +186,7 @@ def analyze_stock(sym, df, selector, fin_data=None, deep_insights=None):
         else: verdict = "★"
 
         return {
-            "symbol": sym, "close": close, "score_10d": round(s10,1), "score_60d": round(s60,1),
+            "symbol": sym, "close": close, "score_short": round(s10,1), "score_long": round(s60,1),
             "rsi": rsi, "j_val": j_val, "zxdkx_ratio": zr, "ma_alignment": ma_align,
             "trend": trend, "macd_quality": macd_q, "vol_trend": vol_trend,
             "rets": rets, "high_20": high_20, "low_20": low_20, "high_60": high_60,
@@ -245,7 +245,7 @@ def generate_report():
     except Exception as e:
         print(f"  [警告] 基本面数据获取失败: {e}")
 
-    # 60d评分
+    # 长线评分
     results = []
     for sym, df in stock_data.items():
         sym = str(sym).zfill(6)
@@ -253,13 +253,13 @@ def generate_report():
             if df.empty or len(df) < 60: continue
             prepared = selector.prepare_data(df)
             cond = selector.check_b1_conditions(prepared, date_idx=-1)
-            score = selector._calculate_score_60d(cond)
+            score = selector._calculate_score_long(cond)
             results.append((sym, df, score))
         except: continue
     results.sort(key=lambda x: x[2], reverse=True)
     top10 = results[:10]
 
-    # 10d评分
+    # 短线评分
     results_10d = []
     for sym, df in stock_data.items():
         sym = str(sym).zfill(6)
@@ -267,7 +267,7 @@ def generate_report():
             if df.empty or len(df) < 60: continue
             prepared = selector.prepare_data(df)
             cond = selector.check_b1_conditions(prepared, date_idx=-1)
-            score = selector._calculate_score(cond, "10d")
+            score = selector._calculate_score(cond, "short")
             results_10d.append((sym, df, score))
         except: continue
     results_10d.sort(key=lambda x: x[2], reverse=True)
@@ -311,6 +311,73 @@ def generate_report():
     ], columns=["指标", "数值"])
     overview.to_excel(wb, sheet_name="市场概览", index=False)
 
+    # Sheet 1.5: 实盘持仓（真实持仓跟踪）
+    holdings_path = os.path.join("data_cache", "my_holdings.json")
+    if os.path.exists(holdings_path):
+        with open(holdings_path, encoding="utf-8") as f:
+            holdings = json.load(f).get("stocks", [])
+        if holdings:
+            h_rows = []
+            for s in holdings:
+                sym = s["symbol"]
+                entry_p = s.get("entry_price")
+                entry_d = s.get("entry_date", "")
+                # 当前价+技术面
+                current_p = None; sell_sig = "—"; rsi_v = None; macd_q = None; trend_v = None
+                for fname in [f"{sym}.csv", f"{sym.lstrip('0')}.csv"]:
+                    fp = os.path.join("data_cache", fname)
+                    if os.path.exists(fp):
+                        try:
+                            tdf = pd.read_csv(fp, index_col=0, parse_dates=True)
+                            if not tdf.empty and len(tdf) >= 100:
+                                pdf = selector.prepare_data(tdf)
+                                cond = selector.check_b1_conditions(pdf, date_idx=-1)
+                                current_p = round(float(pdf["close"].iloc[-1]), 2)
+                                rsi_v = round(cond.get("rsi", 50), 1)
+                                macd_q = round(cond.get("macd_quality", 0), 1)
+                                trend_v = round(cond.get("trend_strength", 0), 1)
+                                # v3卖出信号
+                                weekly = tdf['close'].resample('W-FRI').last().dropna()
+                                wh = tdf['high'].resample('W-FRI').max()
+                                wv = tdf['volume'].resample('W-FRI').sum()
+                                if len(weekly) >= 14:
+                                    wc = weekly.iloc[-1]; wc_p = weekly.iloc[-2]
+                                    rh12 = wh.iloc[-12:].max()
+                                    pv12 = wv.iloc[-12:].max() * weekly.iloc[-12:].max()/1e8
+                                    cv = wv.iloc[-1]*wc/1e8; cv_p = wv.iloc[-2]*wc_p/1e8
+                                    ma5w = weekly.iloc[-5:].mean()
+                                    delta = weekly.iloc[-14:].diff()
+                                    g = delta.clip(lower=0).mean(); l = (-delta).clip(lower=0).mean()
+                                    rsi_w = 100-100/(1+g/(l+1e-9)) if l > 0 else 100
+                                    near = wc >= rh12*0.97
+                                    div2 = near and cv < pv12*0.5 and cv_p < pv12*0.5
+                                    bma = wc < ma5w*0.95
+                                    hot = rsi_w > 82 and wc > ma5w*1.15
+                                    # 简化判断：不要求连续两周（可能只有最新一周的数据）
+                                    single_div = near and cv < pv12 * 0.5
+                                    if div2: sell_sig = "建议卖出"
+                                    elif bma: sell_sig = "建议卖出"
+                                    elif hot: sell_sig = "建议卖出"
+                                    else: sell_sig = "持有"
+                        except Exception: pass
+                        break
+                if entry_p and current_p:
+                    pnl = (current_p/entry_p - 1) * 100
+                    pnl_str = f"{pnl:+.1f}%"
+                else:
+                    pnl_str = "—"
+                h_rows.append({
+                    "代码": sym, "名称": s.get("name",""),
+                    "成本": f"{entry_p:.2f}" if entry_p else "—",
+                    "现价": f"{current_p:.2f}" if current_p else "—",
+                    "盈亏": pnl_str,
+                    "RSI": f"{rsi_v:.0f}" if rsi_v else "—",
+                    "MACD": f"{macd_q:.0f}" if macd_q else "—",
+                    "趋势": f"{trend_v:+.1f}%" if trend_v else "—",
+                    "卖出": sell_sig,
+                })
+            pd.DataFrame(h_rows).to_excel(wb, sheet_name="实盘持仓", index=False)
+
     # Sheet 2: 纸上持仓
     if pf_rows:
         pf_df = pd.DataFrame(pf_rows)
@@ -318,7 +385,7 @@ def generate_report():
     else:
         pd.DataFrame([["暂无持仓"]]).to_excel(wb, sheet_name="纸上持仓", index=False)
 
-    # Sheet 3: 60d Top10 汇总
+    # Sheet 3: 长线 Top10 (20d持有)
     summary_rows = []
     for i, (sym, df, score) in enumerate(top10, 1):
         name = name_map.get(sym, "?")
@@ -327,7 +394,7 @@ def generate_report():
         fin = fin_data.get(sym, {})
         summary_rows.append({
             "排名": i, "代码": sym, "名称": name,
-            "收盘": a.get("close", 0), "60d得分": a.get("score_60d", 0),
+            "收盘": a.get("close", 0), "长线得分": a.get("score_long", 0),
             "评级": a.get("verdict", "?"),
             "风险": ", ".join(a.get("risks", [])),
             "zxdkx比": a.get("zxdkx_ratio", 0), "RSI": a.get("rsi", 0),
@@ -341,7 +408,7 @@ def generate_report():
             "ATR%": round(a.get("atr", 0) / a.get("close", 1) * 100, 1) if a.get("close", 0) > 0 else 0,
         })
     df_sum = pd.DataFrame(summary_rows)
-    df_sum.to_excel(wb, sheet_name="60d Top10汇总", index=False)
+    df_sum.to_excel(wb, sheet_name="长线 Top10", index=False)
 
     # Sheet 3.5: 10d 短线 Top10 参考
     short_rows = []
@@ -351,53 +418,34 @@ def generate_report():
         rets = a.get("rets", {})
         short_rows.append({
             "排名": i, "代码": sym, "名称": name,
-            "收盘": a.get("close", 0), "10d得分": a.get("score_10d", 0),
-            "60d得分": a.get("score_60d", 0),
+            "收盘": a.get("close", 0), "短线得分": a.get("score_short", 0),
+            "长线得分": a.get("score_long", 0),
             "zxdkx比": a.get("zxdkx_ratio", 0), "RSI": a.get("rsi", 0),
             "J值": a.get("j_val", 0),
             "5日%": rets.get("5d", 0), "20日%": rets.get("20d", 0),
             "评级": a.get("verdict", "?"),
         })
-    pd.DataFrame(short_rows).to_excel(wb, sheet_name="10d短线参考", index=False)
+    pd.DataFrame(short_rows).to_excel(wb, sheet_name="短线参考", index=False)
 
-    # Sheet 4: 技术信号详情
-    tech_rows = []
+    # Sheet 4: 技术深度（信号+价位合并，避免重复调用analyze_stock）
+    tech_deep = []
     for i, (sym, df, score) in enumerate(top10, 1):
         name = name_map.get(sym, "?")
         a = analyze_stock(sym, df, selector, fin_data, deep_insights)
         rets = a.get("rets", {})
-        tech_rows.append({
-            "排名": i, "代码": sym, "名称": name,
-            "zxdkx比": a.get("zxdkx_ratio", 0),
-            "RSI": a.get("rsi", 0), "J值": a.get("j_val", 0),
-            "均线排列": f"{a.get('ma_alignment',0)}/3",
-            "趋势强度": f"{a.get('trend',0):+.1f}%",
-            "MACD质量": a.get("macd_quality", 0),
-            "量趋势": a.get("vol_trend", 1.0),
-            "5日涨幅": rets.get("5d", 0),
-            "10日涨幅": rets.get("10d", 0),
-            "20日涨幅": rets.get("20d", 0),
-            "60日涨幅": rets.get("60d", 0),
-        })
-    pd.DataFrame(tech_rows).to_excel(wb, sheet_name="技术信号详情", index=False)
-
-    # Sheet 5: 关键价位
-    level_rows = []
-    for i, (sym, df, score) in enumerate(top10, 1):
-        name = name_map.get(sym, "?")
-        a = analyze_stock(sym, df, selector, fin_data, deep_insights)
         mas = a.get("mas", {})
         c = a.get("close", 1)
-        level_rows.append({
-            "排名": i, "代码": sym, "名称": name, "收盘": c,
+        tech_deep.append({
+            "排名": i, "代码": sym, "名称": name,
+            "zxdkx比": a.get("zxdkx_ratio", 0), "RSI": a.get("rsi", 0),
+            "J值": a.get("j_val", 0), "均线": f"{a.get('ma_alignment',0)}/3",
+            "趋势": f"{a.get('trend',0):+.1f}%", "MACD质量": a.get("macd_quality", 0),
+            "5日%": rets.get("5d", 0), "20日%": rets.get("20d", 0),
             "MA5": mas.get(5, 0), "MA20": mas.get(20, 0),
             "知行线": a.get("zxdkx_val", 0), "MA60": mas.get(60, 0),
-            "20日高": a.get("high_20", 0), "20日低": a.get("low_20", 0),
-            "新高?": "是" if a.get("at_high") else "否",
-            "ATR(14)": a.get("atr", 0),
-            "日均波动": f"±{a.get('atr',0)/c*100:.1f}%" if c > 0 else "?",
+            "ATR": a.get("atr", 0), "新高?": "是" if a.get("at_high") else "否",
         })
-    pd.DataFrame(level_rows).to_excel(wb, sheet_name="关键价位", index=False)
+    pd.DataFrame(tech_deep).to_excel(wb, sheet_name="技术深度", index=False)
 
     # Sheet 6: 深层洞察（研报/行业/风险）
     insight_rows = []
@@ -411,33 +459,26 @@ def generate_report():
                 "核心亮点": " | ".join(di.get("deep_highlights", [])),
                 "隐蔽风险": " | ".join(di.get("deep_risks", [])),
             })
-    if insight_rows:
-        pd.DataFrame(insight_rows).to_excel(wb, sheet_name="深层洞察", index=False)
-
-    # Sheet 7: 操作建议
-    if is_bull:
-        recs = []
-        for i, (sym, df, score) in enumerate(top10):
-            name = name_map.get(sym, "?")
-            a = analyze_stock(sym, df, selector, fin_data, deep_insights)
-            fin = fin_data.get(sym, {})
-            rets = a.get("rets", {})
-            di = deep_insights.get(sym, {})
-            recs.append({
-                "排名": i + 1, "代码": sym, "名称": name,
-                "60d得分": a.get("score_60d", 0), "评级": a.get("verdict", "?"),
-                "风险": ", ".join(a.get("risks", [])),
-                "Q1营收(亿)": round(fin.get("营收", 0) / 1e8, 1) if fin.get("营收") else None,
-                "营收增速%": round(fin.get("营收增速", 0), 1) if fin.get("营收增速") else None,
-                "Q1净利(亿)": round(fin.get("净利润", 0) / 1e8, 1) if fin.get("净利润") else None,
-                "利润增速%": round(fin.get("利润增速", 0), 1) if fin.get("利润增速") else None,
-                "毛利率%": round(fin.get("毛利率", 0), 1) if fin.get("毛利率") else None,
-                "20日涨跌%": rets.get("20d", 0),
-                "深层判断": di.get("verdict_override", ""),
-            })
-        pd.DataFrame(recs).to_excel(wb, sheet_name="操作建议", index=False)
-    else:
-        pd.DataFrame([["熊市", "建议空仓等待"]]).to_excel(wb, sheet_name="操作建议", index=False, header=["状态", "建议"])
+    # Sheet 6: 综合建议（深层洞察+操作建议合并，避免重复调用analyze_stock）
+    combined_rows = []
+    for i, (sym, df, score) in enumerate(top10):
+        name = name_map.get(sym, "?")
+        a = analyze_stock(sym, df, selector, fin_data, deep_insights)
+        fin = fin_data.get(sym, {})
+        rets = a.get("rets", {})
+        di = deep_insights.get(sym, {})
+        combined_rows.append({
+            "排名": i + 1, "代码": sym, "名称": name,
+            "长线得分": a.get("score_long", 0), "评级": a.get("verdict", "?"),
+            "风险": ", ".join(a.get("risks", [])),
+            "Q1营收(亿)": round(fin.get("营收", 0) / 1e8, 1) if fin.get("营收") else None,
+            "利润增速%": round(fin.get("利润增速", 0), 1) if fin.get("利润增速") else None,
+            "毛利率%": round(fin.get("毛利率", 0), 1) if fin.get("毛利率") else None,
+            "综合判断": di.get("verdict_override", ""),
+            "核心亮点": " | ".join(di.get("deep_highlights", [])[:2]),
+            "隐蔽风险": " | ".join(di.get("deep_risks", [])[:2]),
+        })
+    pd.DataFrame(combined_rows).to_excel(wb, sheet_name="综合建议", index=False)
 
     # Sheet 8: 早期关注（全市场潜力股，不限HS300）
     ew_path = os.path.join("data_cache", "early_watch.json")
@@ -467,7 +508,7 @@ def generate_report():
                                 pdf = selector.prepare_data(tdf)
                                 cond = selector.check_b1_conditions(pdf, date_idx=-1)
                                 current_price = round(float(pdf["close"].iloc[-1]), 2)
-                                current_score = round(selector._calculate_score_60d(cond), 1)
+                                current_score = round(selector._calculate_score_long(cond), 1)
                         except Exception:
                             pass
                         break
@@ -490,12 +531,111 @@ def generate_report():
                     "代码": sym, "名称": name,
                     "发现日期": disc_date, "发现价": disc_price,
                     "现价": current_price, "涨幅": gain_str,
-                    "60d得分": current_score,
+                    "长线得分": current_score,
                     "排名": rank_str,
                     "核心逻辑": logic,
                 })
             if ew_rows:
                 pd.DataFrame(ew_rows).to_excel(wb, sheet_name="早期关注", index=False)
+
+    # Sheet 8: 精筛池（Claude优中选优 ≤5只）
+    cp_path = os.path.join("data_cache", "curated_pool.json")
+    if os.path.exists(cp_path):
+        with open(cp_path, encoding="utf-8") as f:
+            cps = json.load(f).get("stocks", [])
+        if cps:
+            cp_rows = []
+            for s in cps:
+                sym = s["symbol"]
+                current_price = None; current_score = None
+                for fname in [f"{sym}.csv", f"{sym.lstrip('0')}.csv"]:
+                    fpath = os.path.join("data_cache", fname)
+                    if os.path.exists(fpath):
+                        try:
+                            tdf = pd.read_csv(fpath, index_col=0, parse_dates=True)
+                            if not tdf.empty and len(tdf) >= 60:
+                                pdf = selector.prepare_data(tdf)
+                                cond = selector.check_b1_conditions(pdf, date_idx=-1)
+                                current_price = round(float(pdf["close"].iloc[-1]), 2)
+                                current_score = round(selector._calculate_score_long(cond), 1)
+                        except Exception: pass
+                        break
+                # v3 卖出信号检测
+                sell_signal = ""
+                if current_price and tdf is not None and len(tdf) >= 100:
+                    try:
+                        weekly = tdf['close'].resample('W-FRI').last().dropna()
+                        wh = tdf['high'].resample('W-FRI').max()
+                        wv = tdf['volume'].resample('W-FRI').sum()
+                        if len(weekly) >= 14:
+                            wc = weekly.iloc[-1]; wc_prev = weekly.iloc[-2]
+                            rh12 = wh.iloc[-12:].max()
+                            pv12 = wv.iloc[-12:].max() * weekly.iloc[-12:].max() / 1e8
+                            cv = wv.iloc[-1] * wc / 1e8
+                            cv_prev = wv.iloc[-2] * wc_prev / 1e8
+                            ma5w = weekly.iloc[-5:].mean()
+                            delta = weekly.iloc[-14:].diff()
+                            g = delta.clip(lower=0).mean(); l = (-delta).clip(lower=0).mean()
+                            rsi = 100-100/(1+g/(l+1e-9)) if l > 0 else 100
+                            near_peak = wc >= rh12 * 0.97
+                            two_week_div = near_peak and cv < pv12 * 0.5 and cv_prev < pv12 * 0.5
+                            break_ma = wc < ma5w * 0.95 and cv > 1.3 * (wv.iloc[-10:-1].mean() * weekly.iloc[-10:-1].mean() / 1e8)
+                            rsi_warn = rsi > 82 and wc > ma5w * 1.15
+                            if two_week_div: sell_signal = "建议卖出"
+                            elif break_ma: sell_signal = "建议卖出"
+                            elif rsi_warn: sell_signal = "建议卖出"
+                            else: sell_signal = "持有"
+                    except Exception: pass
+
+                cp_rows.append({
+                    "代码": sym, "名称": s.get("name",""), "入选日": s.get("added",""),
+                    "现价": f"{current_price:.2f}" if current_price else "?",
+                    "卖出信号": sell_signal,
+                    "核心逻辑": s.get("core_logic",""), "风险": s.get("risk",""),
+                })
+            pd.DataFrame(cp_rows).to_excel(wb, sheet_name="精筛池", index=False)
+
+    # Sheet 9: 实时信号（精筛池 + 盘中监测）
+    import importlib
+    cp2_path = os.path.join("data_cache", "curated_pool.json")
+    signal_rows = []
+    if os.path.exists(cp2_path):
+        try:
+            from real_time import get_realtime_quote
+            with open(cp2_path, encoding="utf-8") as f:
+                cps = json.load(f).get("stocks", [])
+            for s in cps:
+                sym = s["symbol"]
+                quote = get_realtime_quote(sym)
+                if not quote: continue
+                price = quote.get("price") or 0
+                chg = quote.get("change_pct") or 0
+                turnover = quote.get("turnover_rate") or 0
+                # 加载历史判断信号
+                hist = None
+                for fname in [f"{sym}.csv", f"{sym.lstrip('0')}.csv"]:
+                    hp = os.path.join("data_cache", fname)
+                    if os.path.exists(hp):
+                        hist = pd.read_csv(hp, index_col=0, parse_dates=True)
+                        break
+                signals = []
+                if hist is not None and len(hist) >= 20:
+                    h20 = hist["high"].iloc[-20:].max()
+                    avg_vol_5d = hist["volume"].iloc[-6:-1].mean()
+                    if avg_vol_5d > 0:
+                        vol_ratio = hist["volume"].iloc[-1] / avg_vol_5d
+                        if vol_ratio > 1.5: signals.append(f"放量{vol_ratio:.1f}x")
+                    if hist["close"].iloc[-1] >= h20 * 0.98: signals.append("接近新高")
+                    if abs(chg) > 5: signals.append(f"{'大涨' if chg>0 else '大跌'}{abs(chg):.0f}%")
+                signal_rows.append({
+                    "代码": sym, "名称": s.get("name",""), "现价": f"{price:.2f}",
+                    "涨跌": f"{chg:+.2f}%", "换手": f"{turnover:.1f}%",
+                    "信号": " | ".join(signals) if signals else "—",
+                })
+        except Exception:
+            pass
+    if signal_rows:
+        pd.DataFrame(signal_rows).to_excel(wb, sheet_name="实时信号", index=False)
 
     wb.close()
 

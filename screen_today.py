@@ -59,7 +59,7 @@ def main():
     # 预计算并评分（三档持有期）
     results = []
     total = len(stock_data)
-    horizons = ['10d', '60d']
+    horizons = ['short', 'long']
 
     # 收集信号分布数据（用于诊断）
     signal_collector = {k: [] for k in [
@@ -82,13 +82,13 @@ def main():
             prepared = selector.prepare_data(df)
             conditions = selector.check_b1_conditions(prepared, date_idx=-1)
 
-            # 双档评分（10d用legacy因子, 60d用独立引擎）
+            # 双档评分（短线用legacy因子, 长线用独立引擎）
             scores = {}
             for h in horizons:
-                if h == '60d':
-                    scores[h] = selector._calculate_score_60d(conditions)
+                if h == 'long':
+                    scores[h] = selector._calculate_score_long(conditions)
                 else:
-                    scores[h] = selector._calculate_score(conditions, '10d')
+                    scores[h] = selector._calculate_score(conditions, 'short')
 
             close = float(prepared["close"].iloc[-1])
 

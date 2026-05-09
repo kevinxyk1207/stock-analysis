@@ -18,19 +18,19 @@ class SignalDef(NamedTuple):
 
 # 三档信号注册表
 HORIZON_SIGNALS = {
-    'short': [   # 短线 — 爆发力
+    'short': [   # 短线 — 动量爆发
         SignalDef('volume_surge',       25, '量比: volume/MA_vol_20'),
         SignalDef('price_accel_5',      25, '5日加速度: close/close(5)-1'),
         SignalDef('range_expand_5',     15, '波动扩张: ATR(5)/close'),
         SignalDef('rel_strength_20',    20, '20日相对强度'),
         SignalDef('kdj_rebound',        15, 'J值低位反弹强度'),
     ],
-    'long': [    # 长线 — 趋势延续（60d需要的是趋势动能，不是结构稳定）
-        SignalDef('ma_alignment',       20, '均线排列得分(MA5>MA10>MA20>MA40)'),
-        SignalDef('trend_strength',     25, '趋势强度: (MA20-MA60)/close'),
-        SignalDef('macd_quality',       25, 'MACD动量质量'),
-        SignalDef('rsi_trending_zone',  15, 'RSI趋势区间(50-70)'),
-        SignalDef('vol_trend_ratio',    15, '量能趋势: MA_vol_5/MA_vol_20'),
+    'long': [    # 长线 — 趋势稳定/回撤控制（原60d评分用错信号，修复为真正的结构信号）
+        SignalDef('ma60_slope_20d',      25, 'MA60 20日斜率: 长期趋势方向'),
+        SignalDef('drawdown_ratio',      20, '回撤控制: close/60日高'),
+        SignalDef('low_volatility',      20, '低波动: 20日收益率标准差'),
+        SignalDef('price_vs_ma120',      20, '相对MA120位置: 结构位'),
+        SignalDef('weekly_bull_strength', 15, '周线多头强度: 周线确认'),
     ],
 }
 
@@ -103,6 +103,14 @@ def compute_horizon_columns(df: pd.DataFrame) -> pd.DataFrame:
         j = result['J']
         j_low_5 = j.rolling(5, min_periods=1).min()
         result['kdj_rebound'] = ((j - j_low_5) / (j_low_5.abs() + 1e-9) * 100).clip(0, 100)
+
+    # ── 反转潜力: 低位 × 缩量 (IC=0.061) ──
+    if 'reversal_potential' not in result.columns:
+        high_60 = close.rolling(60, min_periods=1).max()
+        low_60 = close.rolling(60, min_periods=1).min()
+        pos_60 = (close - low_60) / (high_60 - low_60 + 1e-9)
+        # (1-位置) × (20日均量/今日量) = 低位 × 缩量
+        result['reversal_potential'] = ((1 - pos_60) * result['vol_ma_20'] / volume).clip(0, 10)
 
     # ── 中线信号原始值 ──
     if 'ma_alignment' not in result.columns:
@@ -245,6 +253,14 @@ def norm_rel_strength(v: float) -> float:
     return max(0.0, min(100.0, v * 100.0))
 
 
+def norm_reversal_potential(v: float) -> float:
+    """反转潜力: 0-10 → 0-100, 越高越好"""
+    v = max(0.0, min(10.0, v))
+    if v < 0.5: return v / 0.5 * 20.0       # 0-0.5 → 0-20
+    if v < 1.5: return 20.0 + (v-0.5)/1.0*40.0  # 0.5-1.5 → 20-60
+    if v < 3.0: return 60.0 + (v-1.5)/1.5*40.0  # 1.5-3.0 → 60-100
+    return 100.0
+
 def norm_kdj_rebound(v: float) -> float:
     """J值反弹: 直接 clip 0-100"""
     return max(0.0, min(100.0, v))
@@ -382,6 +398,7 @@ NORM_FUNCTIONS = {
     'range_expand_5': norm_range_expand,
     'rel_strength_20': norm_rel_strength,
     'kdj_rebound': norm_kdj_rebound,
+    'reversal_potential': norm_reversal_potential,
     'ma_alignment': norm_ma_alignment,
     'trend_strength': norm_trend_strength,
     'macd_quality': norm_macd_quality,

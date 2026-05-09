@@ -88,7 +88,7 @@ def main():
                 continue
             prepared = selector.prepare_data(df)
             conditions = selector.check_b1_conditions(prepared, date_idx=-1)
-            score = selector._calculate_score_60d(conditions)
+            score = selector._calculate_score_long(conditions)
             close = float(prepared["close"].iloc[-1])
             results.append(
                 {"symbol": sym, "name": name_map.get(sym, ""),

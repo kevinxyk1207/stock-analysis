@@ -63,13 +63,13 @@ def get_b1_score(code, selector, cache_dir):
                 if len(tdf) >= 60:
                     prepared = selector.prepare_data(tdf)
                     cond = selector.check_b1_conditions(prepared, date_idx=-1)
-                    s60 = selector._calculate_score_60d(cond)
-                    s10 = selector._calculate_score(cond, "10d")
+                    s60 = selector._calculate_score_long(cond)
+                    s10 = selector._calculate_score(cond, "short")
                     close = float(prepared["close"].iloc[-1])
                     rsi = cond.get("rsi", 50)
                     ret_60d = (close - prepared["close"].iloc[-61]) / prepared["close"].iloc[-61] * 100 if len(prepared) > 60 else 0
                     return {
-                        "scores": {"score_60d": round(s60, 1), "score_10d": round(s10, 1)},
+                        "scores": {"score_long": round(s60, 1), "score_short": round(s10, 1)},
                         "returns": {"60d": round(ret_60d, 1)},
                         "price": {"close": round(close, 2), "rsi": round(rsi, 1)},
                     }
@@ -116,7 +116,7 @@ def main():
             "profit_yoy": r.get("利润增速%"),
             "margin": r.get("毛利率%"),
             "pe_consensus": r.get("研报共识PE"),
-            "score_60d": b1.get("scores", {}).get("score_60d", 0),
+            "score_long": b1.get("scores", {}).get("score_long", 0),
             "overall_level": research["overall_level"],
             "verdict": research["verdict"],
             "insights": research["insights"][:5],
@@ -127,7 +127,7 @@ def main():
         print(f"  {i+1:>2}. {code} {name:<8} B1={b1.get('scores',{}).get('score_60d',0):.0f}  {level_icon} {research['verdict'][:60]}")
 
     # 按B1评分排序，输出Top
-    results.sort(key=lambda x: x["score_60d"], reverse=True)
+    results.sort(key=lambda x: x["score_long"], reverse=True)
 
     print(f"\n{'='*60}")
     print(f"  精筛结果 (按B1评分排序)")

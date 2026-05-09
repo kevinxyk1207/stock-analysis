@@ -14,16 +14,43 @@ def main():
     logger.info("每日收盘自动更新开始")
     logger.info("=" * 50)
 
-    # 1. 增量更新缓存
-    logger.info("更新数据缓存...")
+    # 1. 实时更新（15:10即可用，<2分钟全量刷新）
+    logger.info("实时数据更新中...")
+    from real_time import get_realtime_quote
+    from datetime import datetime, timedelta
+    import pandas as pd, os
+    today = datetime.now().strftime("%Y-%m-%d")
+    cache_dir = "data_cache"
+    updated = 0
+    for f in os.listdir(cache_dir):
+        if not f.endswith(".csv"): continue
+        sym = f[:-4]
+        quote = get_realtime_quote(sym)
+        if not quote or not quote.get("price"): continue
+        try:
+            df = pd.read_csv(os.path.join(cache_dir, f), index_col=0, parse_dates=True)
+            # 删除旧数据，强制覆盖（盘中数据可能不准，需要收盘后刷新）
+            df = df[~df.index.isin([pd.Timestamp(today)])]
+            new_row = pd.DataFrame({
+                "open": [quote.get("open") or quote["price"]],
+                "high": [quote.get("high") or quote["price"]],
+                "low": [quote.get("low") or quote["price"]],
+                "close": [quote["price"]],
+                "volume": [quote.get("volume", 0)],
+            }, index=[pd.Timestamp(today)])
+            df = pd.concat([df, new_row])
+            df.to_csv(os.path.join(cache_dir, f))
+            updated += 1
+        except Exception:
+            continue
+    logger.info(f"实时更新完成: {updated} 只")
+
+    # 1.5 增量更新缓存（baostock兜底，处理实时API漏掉的）
     from enhanced_fetcher import EnhancedStockFetcher
     fetcher = EnhancedStockFetcher()
     stats = fetcher.update_cache()
-
-    if not stats:
-        logger.info("缓存已是最新，无需更新")
-    else:
-        logger.info(f"更新完成: {len(stats)} 只有新数据")
+    if stats:
+        logger.info(f"baostock补充: {len(stats)} 只")
 
     # 2. 获取最新成分股列表，补充新纳入的股票
     logger.info("检查成分股变动...")
@@ -80,6 +107,15 @@ def main():
         import traceback
         traceback.print_exc()
 
+    # 4.5. 交叉验证（基本面 × B1技术 × 入场时机）
+    logger.info("三线交叉验证...")
+    from cross_validator import main as cross_validator_main
+    try:
+        cross_validator_main()
+        logger.info("交叉验证完成")
+    except Exception as e:
+        logger.error(f"交叉验证失败: {e}")
+
     # 5. 生成综合日报
     logger.info("生成综合日报...")
     from daily_report import generate_report
@@ -89,7 +125,16 @@ def main():
     except Exception as e:
         logger.error(f"日报生成失败: {e}")
 
-    # 5. 纸上跟踪持仓状态
+    # 5. 生成速览
+    logger.info("生成速览...")
+    from daily_dashboard import generate as dash_gen
+    try:
+        dash_gen()
+        logger.info("速览生成完成")
+    except Exception as e:
+        logger.error(f"速览生成失败: {e}")
+
+    # 6. 纸上跟踪持仓状态
     logger.info("纸上跟踪持仓...")
     from paper_tracker import main as tracker_main
     try:
