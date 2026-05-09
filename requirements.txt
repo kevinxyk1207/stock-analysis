@@ -9,3 +9,4 @@ matplotlib>=3.7.0
 ta-lib>=0.4.28
 numba>=0.64.0
 # tushare>=1.2.89  # 备选数据源，如需切换取消注释
+# redeploy trigger
