@@ -281,16 +281,21 @@ def init_session():
         if k not in st.session_state:
             st.session_state[k] = v
 
-    # 自选股从本地文件加载
+    # 自选股从文件恢复（多路径尝试）
     if "favorites" not in st.session_state:
-        try:
-            fav_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "favorites.json")
-            if os.path.exists(fav_path):
-                with open(fav_path, "r", encoding="utf-8") as f:
-                    st.session_state.favorites = json.load(f)
-            else:
-                st.session_state.favorites = []
-        except Exception:
+        loaded = False
+        base = os.path.dirname(os.path.abspath(__file__))
+        for d in [base, "/tmp"]:
+            try:
+                fav_path = os.path.join(d, "favorites.json")
+                if os.path.exists(fav_path):
+                    with open(fav_path, "r", encoding="utf-8") as f:
+                        st.session_state.favorites = json.load(f)
+                    loaded = True
+                    break
+            except Exception:
+                continue
+        if not loaded:
             st.session_state.favorites = []
 
     if "history" not in st.session_state:
@@ -300,9 +305,16 @@ def init_session():
 def _save_favorites():
     """持久化自选股到文件"""
     try:
-        fav_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "favorites.json")
-        with open(fav_path, "w", encoding="utf-8") as f:
-            json.dump(st.session_state.favorites, f, ensure_ascii=False)
+        base = os.path.dirname(os.path.abspath(__file__))
+        # 先试根目录，失败则用 /tmp
+        for d in [base, "/tmp"]:
+            try:
+                fav_path = os.path.join(d, "favorites.json")
+                with open(fav_path, "w", encoding="utf-8") as f:
+                    json.dump(st.session_state.favorites, f, ensure_ascii=False)
+                return
+            except Exception:
+                continue
     except Exception:
         pass
 
