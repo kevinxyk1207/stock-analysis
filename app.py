@@ -132,82 +132,29 @@ def render_home_page():
 
     st.divider()
 
-    # ── 候选池概览 ──
+    # ── 候选池概览（容错）──
     try:
         scan = _cached_scanner()
-        if "error" not in scan and scan.get("candidates"):
+        if isinstance(scan, dict) and "error" not in scan and scan.get("candidates"):
             pool = scan["candidates"]
             st.subheader(f"全市场候选池: {len(pool)} 只 Q1 暴增股")
-            st.caption(f"数据日期: {scan.get('date', '?')} | 下一批更新: 每日 15:30")
     except Exception:
-        pass
+        st.caption("候选池加载中...")
 
-    # ── 自选股监控 ──
+    # ── 自选股列表 ──
     favs = st.session_state.get("favorites", [])
     if favs:
         st.subheader(f"自选股 ({len(favs)})")
-        fav_codes = [c for c, _ in favs]
-
-        # 获取实时行情
-        rt_data = {}
-        for code in fav_codes[:10]:
-            try:
-                q = cached_realtime_quote(code)
-                if q:
-                    rt_data[code] = q
-            except Exception:
-                pass
-
-        # 检测信号
-        from combined_backtest import detect_current_signals
-        from enhanced_fetcher import EnhancedStockFetcher
-        fetcher = EnhancedStockFetcher()
-        signal_count = 0
-
-        for code, name in favs[:10]:
-            rt = rt_data.get(code, {})
-            pct_val = rt.get("change_pct", 0) or 0
-            price_val = rt.get("price", 0) or 0
-            color = "#e53935" if pct_val >= 0 else "#26a69a"
-
-            # 信号检测
-            try:
-                end = datetime.now().strftime("%Y%m%d")
-                start = (datetime.now() - timedelta(days=730)).strftime("%Y%m%d")
-                df = fetcher._get_cached_data(code, start, end)
-                sig = detect_current_signals(code, df) if df is not None and len(df) > 0 else {"buy": [], "sell": [], "neutral": True}
-            except Exception:
-                sig = {"buy": [], "sell": [], "neutral": True}
-
-            has_buy = len(sig.get("buy", [])) > 0
-            has_sell = len(sig.get("sell", [])) > 0
-            if has_buy:
-                signal_count += 1
-
-            buy_tag = " [买点]" if has_buy else ""
-            sell_tag = " [卖点]" if has_sell else ""
-
-            c1, c2 = st.columns([3, 1])
-            with c1:
-                st.markdown(f"""
-                <div style='padding:6px 0;'>
-                    <span style='font-weight:bold;'>{code} {name}</span>
-                    <span style='color:{color};margin-left:8px;'>{price_val:.2f} ({pct_val:+.2f}%)</span>
-                    <span style='color:#2e7d32;font-weight:bold;margin-left:4px;'>{buy_tag}</span>
-                    <span style='color:#c62828;font-weight:bold;'>{sell_tag}</span>
-                </div>
-                """, unsafe_allow_html=True)
-            with c2:
-                if st.button("分析", key=f"home_{code}", use_container_width=True):
+        cols = st.columns(min(len(favs), 5))
+        for i, (code, name) in enumerate(favs[:10]):
+            with cols[i % 5]:
+                if st.button(f"{code}\n{name}", key=f"home_fav_{code}", use_container_width=True):
                     st.session_state.analyze_code = code
                     st.rerun()
-
-        if signal_count > 0:
-            st.success(f"{signal_count} 只自选股触发买入信号")
     else:
         st.info("暂无自选股。在搜索页收藏你关注的股票。")
 
-    # ── 最近分析记录 ──
+    # ── 最近 ──
     history = st.session_state.get("history", [])
     if history:
         with st.expander("最近查询", expanded=False):
