@@ -284,7 +284,7 @@ def init_session():
     # 自选股从本地文件加载
     if "favorites" not in st.session_state:
         try:
-            fav_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_cache", "favorites.json")
+            fav_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "favorites.json")
             if os.path.exists(fav_path):
                 with open(fav_path, "r", encoding="utf-8") as f:
                     st.session_state.favorites = json.load(f)
@@ -300,8 +300,7 @@ def init_session():
 def _save_favorites():
     """持久化自选股到文件"""
     try:
-        fav_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_cache", "favorites.json")
-        os.makedirs(os.path.dirname(fav_path), exist_ok=True)
+        fav_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "favorites.json")
         with open(fav_path, "w", encoding="utf-8") as f:
             json.dump(st.session_state.favorites, f, ensure_ascii=False)
     except Exception:
