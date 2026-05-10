@@ -96,27 +96,25 @@ def main():
     except Exception as e:
         logger.warning(f"市场检测失败: {e}")
 
-    # 4. 跑选股
-    logger.info("运行选股程序...")
+    # 4. 反转信号扫描（主力系统）
+    logger.info("反转信号扫描...")
+    from daily_reversal import scan
+    try:
+        scan()
+        logger.info("反转扫描完成")
+    except Exception as e:
+        logger.error(f"反转扫描失败: {e}")
+
+    # 5. B1选股参考
+    logger.info("B1选股参考...")
     from screen_today import main as screen_main
     try:
         screen_main()
-        logger.info("选股完成")
+        logger.info("B1选股完成")
     except Exception as e:
         logger.error(f"选股失败: {e}")
-        import traceback
-        traceback.print_exc()
 
-    # 4.5. 交叉验证（基本面 × B1技术 × 入场时机）
-    logger.info("三线交叉验证...")
-    from cross_validator import main as cross_validator_main
-    try:
-        cross_validator_main()
-        logger.info("交叉验证完成")
-    except Exception as e:
-        logger.error(f"交叉验证失败: {e}")
-
-    # 5. 生成综合日报
+    # 6. 生成综合日报
     logger.info("生成综合日报...")
     from daily_report import generate_report
     try:
@@ -142,6 +140,15 @@ def main():
         logger.info("跟踪完成")
     except Exception as e:
         logger.error(f"跟踪失败: {e}")
+
+    # 7. 重建数据库
+    logger.info("重建 SQLite 数据库...")
+    from data_db import rebuild
+    try:
+        n = rebuild()
+        logger.info(f"数据库重建完成: {n} 只")
+    except Exception as e:
+        logger.error(f"数据库重建失败: {e}")
 
     logger.info("=" * 50)
     logger.info("每日更新完成")
